@@ -6,10 +6,12 @@ from app.routers import (
     quizzes_router,
     progress_router,
     media_router,
+    achievements_router,
+    code_exec_router,
 )
 
 __all__ = [
     "auth_router", "users_router", "courses_router",
     "modules_router", "quizzes_router", "progress_router",
-    "media_router",
+    "media_router", "achievements_router", "code_exec_router",
 ]

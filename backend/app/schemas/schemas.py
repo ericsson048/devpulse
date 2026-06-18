@@ -1,6 +1,8 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel, EmailStr, field_validator
+from typing import Optional, List, TypeVar, Generic
 from datetime import datetime
+
+T = TypeVar("T")
 from app.models.models import UserRole, CourseLevel, LessonType
 
 
@@ -24,6 +26,11 @@ class TokenResponse(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
 
 
 # ── User ──────────────────────────────────────────────────────────
@@ -177,13 +184,19 @@ class LessonOut(BaseModel):
     resources: Optional[str] = None
     code_template: Optional[str] = None
     code_language: Optional[str] = None
-    has_editor: bool
+    has_editor: bool = False
     sort_order: int
     xp_reward: int
     is_published: bool
     created_at: datetime
+    quiz_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+    @field_validator("has_editor", mode="before")
+    @classmethod
+    def coerce_has_editor(cls, v: object) -> bool:
+        return False if v is None else bool(v)
 
 
 # ── Quiz ──────────────────────────────────────────────────────────
@@ -334,6 +347,16 @@ class HomeDashboard(BaseModel):
     in_progress_courses: List[CourseWithProgress]
     achievements_count: int
     global_rank: int
+
+
+# ── Pagination ────────────────────────────────────────────────────
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: List[T]
+    total: int
+    skip: int
+    limit: int
+
+    model_config = {"from_attributes": True}
 
 
 # ── Backoffice Dashboard ──────────────────────────────────────────

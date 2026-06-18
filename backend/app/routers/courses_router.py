@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 
 from app.database import get_db
 from app.models import Course, CourseLevel, Module, UserProgress, User
-from app.schemas import CourseCreate, CourseUpdate, CourseOut, CourseWithProgress
+from app.schemas import CourseCreate, CourseUpdate, CourseOut, CourseWithProgress, PaginatedResponse
 from app.auth import get_current_user, get_admin_user
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
@@ -42,11 +42,13 @@ async def list_courses(
     return result.scalars().all()
 
 
-@router.get("/library", response_model=list[CourseWithProgress])
+@router.get("/library", response_model=PaginatedResponse[CourseWithProgress])
 async def library_courses(
     level: str = None,
     language: str = None,
     search: str = None,
+    skip: int = 0,
+    limit: int = 20,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -58,6 +60,11 @@ async def library_courses(
     if search:
         q = q.where(Course.title.ilike(f"%{search}%"))
     q = q.order_by(Course.sort_order)
+
+    total_q = await db.execute(select(func.count()).select_from(q.subquery()))
+    total = total_q.scalar() or 0
+
+    q = q.offset(skip).limit(limit)
     result = await db.execute(q)
     courses = result.scalars().all()
 
@@ -80,7 +87,7 @@ async def library_courses(
             user_status=p.status if p else "not_started",
             modules_completed=0,
         ))
-    return out
+    return PaginatedResponse(items=out, total=total, skip=skip, limit=limit)
 
 
 @router.get("/{course_id}", response_model=CourseOut)
@@ -90,6 +97,61 @@ async def get_course(course_id: int, db: AsyncSession = Depends(get_db)):
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
     return course
+
+
+@router.post("/{course_id}/enroll", response_model=CourseWithProgress)
+async def enroll_course(
+    course_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Course).where(Course.id == course_id))
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    existing = await db.execute(
+        select(UserProgress).where(
+            UserProgress.user_id == current_user.id,
+            UserProgress.course_id == course_id,
+            UserProgress.lesson_id.is_(None),
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Already enrolled")
+
+    progress = UserProgress(
+        user_id=current_user.id,
+        course_id=course_id,
+        status="in_progress",
+        progress_percent=0.0,
+    )
+    db.add(progress)
+    await db.commit()
+    await db.refresh(progress)
+
+    return _course_with_progress(course, user_status="in_progress")
+
+
+@router.post("/{course_id}/unenroll")
+async def unenroll_course(
+    course_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Course).where(Course.id == course_id))
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    await db.execute(
+        delete(UserProgress).where(
+            UserProgress.user_id == current_user.id,
+            UserProgress.course_id == course_id,
+        )
+    )
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/{course_id}/modules", response_model=list)

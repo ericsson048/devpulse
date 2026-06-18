@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_animations.dart';
+import '../../core/services/api_service.dart';
+import '../../core/utils/toast.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -26,8 +28,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Future<void> _submit() async {
     if (_emailCtrl.text.isEmpty) return;
     setState(() => _loading = true);
-    await Future.delayed(1800.ms);
-    if (mounted) setState(() { _loading = false; _sent = true; });
+    try {
+      await ApiService.forgotPassword(_emailCtrl.text.trim());
+      if (mounted) setState(() { _loading = false; _sent = true; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        showToast(context, message: 'Failed: ${e.toString().replaceAll("HttpException: ", "")}', type: ToastType.error);
+      }
+    }
   }
 
   @override

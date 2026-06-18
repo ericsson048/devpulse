@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session, init_db
 from app.models import (
     User, UserRole, Course, CourseLevel, Module, Lesson, LessonType,
-    Quiz, QuizQuestion, Achievement,
+    Quiz, QuizQuestion, Achievement, UserProgress,
 )
 from app.auth import hash_password
 
@@ -36,6 +36,8 @@ async def seed():
         )
         db.add(demo)
 
+        await db.flush()
+
         # ── Courses ─────────────────────────────────────────────
         courses_data = [
             ("Backend Engineering", "Master server-side architecture, APIs, and databases", "storage_rounded", "Node.js", CourseLevel.intermediate, "JavaScript", 12, 1200),
@@ -56,105 +58,309 @@ async def seed():
                 total_xp=xp, sort_order=i, is_published=True,
             )
             db.add(c)
+            await db.flush()
             courses.append(c)
 
-        await db.flush()
+        # ── Generic module/lesson templates ─────────────────────
+        module_templates_by_course = {
+            "Backend Engineering": [
+                ("Introduction to Node.js", "Setting up your development environment"),
+                ("HTTP & Express Basics", "Building your first REST API"),
+                ("Middleware & Routing", "Understanding the request pipeline"),
+                ("Database Integration", "Connecting PostgreSQL with Prisma"),
+                ("Authentication & Security", "JWT, OAuth, and password hashing"),
+                ("Error Handling", "Robust error management patterns"),
+                ("Testing Node.js Apps", "Unit and integration testing with Jest"),
+                ("WebSocket & Real-Time", "Building real-time features with Socket.io"),
+                ("File Uploads & Storage", "Handling multipart data and cloud storage"),
+                ("Caching & Performance", "Redis, memoization, and optimization"),
+                ("Deployment & CI/CD", "Docker, GitHub Actions, and cloud hosting"),
+                ("Capstone Project", "Build a full-stack application"),
+            ],
+            "Rust Fundamentals": [
+                ("Getting Started with Rust", "Installation and first program"),
+                ("Ownership & Borrowing", "Understanding Rust's memory model"),
+                ("Structs & Enums", "Building data types"),
+                ("Pattern Matching", "Exhaustive matching with match"),
+                ("Error Handling", "Result, Option, and custom errors"),
+                ("Traits & Generics", "Polymorphism in Rust"),
+                ("Lifetimes", "Advanced borrowing and references"),
+                ("Concurrency", "Threads, async, and message passing"),
+            ],
+            "TypeScript Patterns": [
+                ("Type System Deep Dive", "Generics, mapped types, conditional types"),
+                ("SOLID Principles", "Applying OOP principles in TypeScript"),
+                ("Creational Patterns", "Factory, Builder, Singleton"),
+                ("Structural Patterns", "Decorator, Adapter, Proxy"),
+                ("Behavioral Patterns", "Observer, Strategy, Command"),
+                ("Functional Patterns", "Immutability, composition, currying"),
+                ("Reactive Patterns", "RxJS and async streams"),
+                ("Testing Patterns", "Mocking, dependency injection"),
+                ("Module Architecture", "Monorepos and package design"),
+                ("Performance Patterns", "Tree shaking, lazy loading"),
+            ],
+            "Go for Backend Developers": [
+                ("Go Basics", "Syntax, types, and tooling"),
+                ("Concurrency with Goroutines", "Channels and select"),
+                ("Building HTTP Servers", "Standard library and Chi"),
+                ("Database Access", "SQLC and GORM"),
+                ("Middleware & Testing", "httptest and table-driven tests"),
+                ("gRPC & Protobuf", "Service definitions and streaming"),
+                ("Observability", "Logging, metrics, tracing"),
+                ("CLI Tools", "Cobra and Viper"),
+            ],
+            "Docker & Kubernetes": [
+                ("Docker Fundamentals", "Images, containers, Dockerfile"),
+                ("Docker Compose", "Multi-service orchestration"),
+                ("Kubernetes Basics", "Pods, Deployments, Services"),
+                ("ConfigMaps & Secrets", "Configuration management"),
+                ("Storage & Volumes", "Persistent volumes and claims"),
+                ("Networking & Ingress", "Service mesh and ingress controllers"),
+                ("Helm & Packaging", "Charts and templating"),
+                ("CI/CD with Kubernetes", "GitOps with ArgoCD"),
+                ("Monitoring & Logging", "Prometheus, Grafana, Loki"),
+                ("Security", "RBAC, Pod Security Policies"),
+                ("Service Mesh", "Istio deep dive"),
+                ("Production Readiness", "Autoscaling, backups, DR"),
+            ],
+            "GraphQL Mastery": [
+                ("GraphQL Basics", "Schema, queries, mutations"),
+                ("Apollo Server", "Setting up a production server"),
+                ("Resolvers & DataLoaders", "Efficient data fetching"),
+                ("Subscriptions", "Real-time GraphQL"),
+                ("Federation", "Distributed GraphQL architecture"),
+                ("Security & Best Practices", "Rate limiting, depth limiting"),
+            ],
+            "Python Fundamentals": [
+                ("Hello, Python!", "Variables, conditionals, loops"),
+                ("Data Structures", "Lists, dicts, sets, tuples"),
+                ("Functions & Scope", "Parameters, decorators, lambdas"),
+                ("OOP in Python", "Classes, inheritance, magic methods"),
+                ("File I/O", "Reading and writing files"),
+                ("Error Handling", "Try-except, logging"),
+                ("Modules & Packages", "Organizing Python code"),
+                ("Testing with pytest", "Writing and running tests"),
+                ("Virtual Environments", "pip, venv, requirements"),
+                ("Final Project", "Build a CLI application"),
+            ],
+            "C++ Systems Programming": [
+                ("C++ Fundamentals", "Memory, pointers, references"),
+                ("Classes & RAII", "Resource management"),
+                ("Templates & STL", "Generic programming"),
+                ("Move Semantics", "Rvalue references, perfect forwarding"),
+                ("Smart Pointers", "unique_ptr, shared_ptr, weak_ptr"),
+                ("Concurrent C++", "Threads, mutexes, atomics"),
+                ("File & Network I/O", "Streams, sockets"),
+                ("Build Systems", "CMake and vcpkg"),
+                ("Debugging & Profiling", "GDB, Valgrind, perf"),
+                ("Design Patterns", "CRTP, PIMPL, Factory"),
+                ("Compile-Time Programming", "Constexpr, concepts, metaprogramming"),
+                ("Interop", "C ABI, Python bindings, WASM"),
+                ("Real-Time Systems", "Low-latency patterns"),
+                ("Capstone", "Build a database or game engine"),
+            ],
+        }
 
-        # ── Modules & Lessons for first course (Backend Engineering) ──
-        modules_data = [
-            ("Introduction to Node.js", "Setting up your development environment"),
-            ("HTTP & Express Basics", "Building your first REST API"),
-            ("Middleware & Routing", "Understanding the request pipeline"),
-            ("Database Integration", "Connecting PostgreSQL with Prisma"),
-            ("Authentication & Security", "JWT, OAuth, and password hashing"),
-            ("Error Handling", "Robust error management patterns"),
-            ("Testing Node.js Apps", "Unit and integration testing with Jest"),
-            ("WebSocket & Real-Time", "Building real-time features with Socket.io"),
-            ("File Uploads & Storage", "Handling multipart data and cloud storage"),
-            ("Caching & Performance", "Redis, memoization, and optimization"),
-            ("Deployment & CI/CD", "Docker, GitHub Actions, and cloud hosting"),
-            ("Capstone Project", "Build a full-stack application"),
-        ]
+        resource_map = {
+            "HTTP & Express Basics": [
+                {"title": "Express.js Official Docs", "url": "https://expressjs.com", "type": "link"},
+                {"title": "MDN Web API Reference", "url": "https://developer.mozilla.org", "type": "link"},
+            ],
+            "Database Integration": [
+                {"title": "PostgreSQL Documentation", "url": "https://postgresql.org/docs", "type": "link"},
+                {"title": "Prisma ORM Guide", "url": "https://prisma.io/docs", "type": "link"},
+            ],
+            "Authentication & Security": [
+                {"title": "JWT Introduction", "url": "https://jwt.io/introduction", "type": "link"},
+                {"title": "OWASP Cheatsheet", "url": "https://cheatsheetseries.owasp.org", "type": "link"},
+            ],
+            "Testing Node.js Apps": [
+                {"title": "Jest Documentation", "url": "https://jestjs.io/docs", "type": "link"},
+                {"title": "Example Repo", "url": "https://github.com/example/testing", "type": "github"},
+            ],
+            "Deployment & CI/CD": [
+                {"title": "Docker Documentation", "url": "https://docs.docker.com", "type": "link"},
+            ],
+        }
 
-        for i, (m_title, m_desc) in enumerate(modules_data):
-            m = Module(
-                course_id=courses[0].id, title=m_title, description=m_desc,
-                sort_order=i, total_lessons=3, total_xp=100, is_published=True,
-            )
-            db.add(m)
-            await db.flush()
-
-            # Add 3 lessons per module
-            lesson_types = [LessonType.theory, LessonType.code, LessonType.quiz]
-            for j, lt in enumerate(lesson_types):
-                resources_map = {
-                    "HTTP & Express Basics": [
-                        {"title": "Express.js Official Docs", "url": "https://expressjs.com", "type": "link"},
-                        {"title": "MDN Web API Reference", "url": "https://developer.mozilla.org", "type": "link"},
-                    ],
-                    "Database Integration": [
-                        {"title": "PostgreSQL Documentation", "url": "https://postgresql.org/docs", "type": "link"},
-                        {"title": "Prisma ORM Guide", "url": "https://prisma.io/docs", "type": "link"},
-                    ],
-                    "Authentication & Security": [
-                        {"title": "JWT Introduction", "url": "https://jwt.io/introduction", "type": "link"},
-                        {"title": "OWASP Cheatsheet", "url": "https://cheatsheetseries.owasp.org", "type": "link"},
-                    ],
-                    "Testing Node.js Apps": [
-                        {"title": "Jest Documentation", "url": "https://jestjs.io/docs", "type": "link"},
-                        {"title": "Example Repo", "url": "https://github.com/example/testing", "type": "github"},
-                    ],
-                    "Deployment & CI/CD": [
-                        {"title": "Docker Documentation", "url": "https://docs.docker.com", "type": "link"},
-                    ],
-                }
-                resources_json = json.dumps(resources_map.get(m_title, []))
-                l = Lesson(
-                    module_id=m.id,
-                    title=f"{m_title} — {'Theory' if j == 0 else 'Practice' if j == 1 else 'Challenge'}",
-                    lesson_type=lt,
-                    content=f"Content for {m_title} lesson {j+1}",
-                    video_url="https://www.youtube.com/embed/dQw4w9WgXcQ" if j == 0 and m.sort_order < 3 else None,
-                    resources=resources_json,
-                    sort_order=j,
-                    xp_reward=25 + (j * 10),
-                    is_published=True,
+        for course in courses:
+            templates = module_templates_by_course.get(course.title, [])
+            for mi, (m_title, m_desc) in enumerate(templates[:course.total_modules]):
+                m = Module(
+                    course_id=course.id, title=m_title, description=m_desc,
+                    sort_order=mi, total_lessons=3, total_xp=100, is_published=True,
                 )
-                db.add(l)
+                db.add(m)
+                await db.flush()
 
-        # ── Sample Quiz ─────────────────────────────────────────
-        quiz = Quiz(
-            module_id=1, title="Rust Ownership Quiz",
-            time_limit_seconds=45, passing_score=0.7,
-            xp_reward=250, is_published=True,
-        )
-        db.add(quiz)
+                lesson_types = [LessonType.theory, LessonType.code, LessonType.quiz]
+                for j, lt in enumerate(lesson_types):
+                    resources_json = json.dumps(resource_map.get(m_title, []))
+                    l = Lesson(
+                        module_id=m.id,
+                        title=f"{m_title} — {'Theory' if j == 0 else 'Practice' if j == 1 else 'Challenge'}",
+                        lesson_type=lt,
+                        content=f"Content for {m_title} lesson {j+1}",
+                        video_url="https://www.youtube.com/embed/dQw4w9WgXcQ" if j == 0 and mi < 3 else None,
+                        resources=resources_json,
+                        sort_order=j,
+                        xp_reward=25 + (j * 10),
+                        is_published=True,
+                    )
+                    db.add(l)
+
         await db.flush()
 
-        questions = [
-            ("What happens when you assign one String variable to another in Rust?",
-             'let s1 = String::from("hello");\nlet s2 = s1;',
-             "s1 is cloned and both are valid", "s1 is moved to s2 and is no longer valid",
-             "s1 becomes a reference to s2", "A compile-time error occurs at the assignment", 1,
-             "Rust uses move semantics by default for heap-allocated types like String."),
-            ("Which keyword creates an immutable reference?",
-             "let r = &x;",
-             "&mut", "&", "ref", "*", 1,
-             "The & operator creates an immutable borrow."),
-            ("What does the Drop trait do?",
-             "",
-             "It allocates memory", "It deallocates memory when a value goes out of scope",
-             "It clones a value", "It serializes data", 1,
-             "Drop is Rust's destructor — it runs when a value leaves scope."),
-        ]
+        # ── Quizzes — one per course first module ────────────────
+        quiz_templates = {
+            "Backend Engineering": {
+                "title": "Node.js Fundamentals Quiz",
+                "questions": [
+                    ("What does Express.js middleware do?", "",
+                     "Handles database migrations", "Processes requests in the pipeline",
+                     "Compiles TypeScript", "Manages environment variables", 1,
+                     "Middleware functions execute during the request-response cycle."),
+                    ("Which method creates an Express app?", "",
+                     "createServer()", "Express()", "new App()", "initExpress()", 1,
+                     "Express() is the top-level function exported by express module."),
+                    ("What is the default HTTP method for app.route()?", "",
+                     "GET", "POST", "PUT", "It matches all methods", 3,
+                     "app.route() returns a Route instance that handles all HTTP methods."),
+                ],
+            },
+            "Rust Fundamentals": {
+                "title": "Rust Ownership Quiz",
+                "questions": [
+                    ("What happens when you assign one String variable to another in Rust?",
+                     'let s1 = String::from("hello");\nlet s2 = s1;',
+                     "s1 is cloned and both are valid", "s1 is moved to s2 and is no longer valid",
+                     "s1 becomes a reference to s2", "A compile-time error occurs at the assignment", 1,
+                     "Rust uses move semantics by default for heap-allocated types like String."),
+                    ("Which keyword creates an immutable reference?",
+                     "let r = &x;",
+                     "&mut", "&", "ref", "*", 1,
+                     "The & operator creates an immutable borrow."),
+                    ("What does the Drop trait do?", "",
+                     "It allocates memory", "It deallocates memory when a value goes out of scope",
+                     "It clones a value", "It serializes data", 1,
+                     "Drop is Rust's destructor — it runs when a value leaves scope."),
+                ],
+            },
+            "TypeScript Patterns": {
+                "title": "TypeScript Generics Quiz",
+                "questions": [
+                    ("What does Partial<T> do?", "",
+                     "Makes all properties required", "Makes all properties optional",
+                     "Makes all properties readonly", "Picks specific properties", 1,
+                     "Partial<T> sets every property in T to optional."),
+                    ("What is the keyof operator used for?", "",
+                     "Iterating over arrays", "Creating union of property names",
+                     "Checking object types", "Accessing index signatures", 1,
+                     "keyof T produces a union of known public property names of T."),
+                ],
+            },
+            "Go for Backend Developers": {
+                "title": "Go Concurrency Quiz",
+                "questions": [
+                    ("How do you send a value to a Go channel?", "",
+                     "ch <- value", "value <- ch", "send(ch, value)", "ch.send(value)", 0,
+                     "The <- operator with the channel on the left sends a value."),
+                    ("What does the select statement do?", "",
+                     "Selects random values from a channel", "Waits on multiple channel operations",
+                     "Selects fields from a struct", "Queries a database", 1,
+                     "select blocks until one of its cases can proceed."),
+                ],
+            },
+            "Docker & Kubernetes": {
+                "title": "Docker Basics Quiz",
+                "questions": [
+                    ("What does 'docker build' produce?", "",
+                     "A container", "An image", "A volume", "A network", 1,
+                     "docker build creates a Docker image from a Dockerfile."),
+                    ("Which flag maps a port in docker run?", "",
+                     "--publish", "--expose", "--link", "--port", 0,
+                     "-p or --publish publishes a container's port to the host."),
+                ],
+            },
+            "GraphQL Mastery": {
+                "title": "GraphQL Intro Quiz",
+                "questions": [
+                    ("What is the default HTTP method for GraphQL queries?", "",
+                     "GET", "POST", "PUT", "DELETE", 1,
+                     "GraphQL queries are typically sent as POST requests."),
+                    ("What does a resolver function return?", "",
+                     "An HTTP response", "The data for a field",
+                     "A SQL query", "A schema definition", 1,
+                     "Resolvers provide the data for each field in a schema."),
+                ],
+            },
+            "Python Fundamentals": {
+                "title": "Python Basics Quiz",
+                "questions": [
+                    ("What is the correct file extension for Python files?", "",
+                     ".pyth", ".pt", ".py", ".python", 2,
+                     "Python files use the .py extension."),
+                    ("Which keyword is used to define a function in Python?", "",
+                     "func", "define", "function", "def", 3,
+                     "Functions are defined with the def keyword."),
+                ],
+            },
+            "C++ Systems Programming": {
+                "title": "C++ Memory Quiz",
+                "questions": [
+                    ("What operator allocates memory on the heap in C++?", "",
+                     "malloc", "alloc", "new", "create", 2,
+                     "The new operator allocates memory on the heap."),
+                    ("What is a smart pointer?", "",
+                     "A pointer that is faster", "An RAII wrapper around a raw pointer",
+                     "A pointer that never fails", "A compile-time pointer", 1,
+                     "Smart pointers automatically manage memory lifetime."),
+                ],
+            },
+        }
 
-        for i, (q_text, code, a, b, c, d, correct, explanation) in enumerate(questions):
-            q = QuizQuestion(
-                quiz_id=quiz.id, question_text=q_text, code_snippet=code or None,
-                option_a=a, option_b=b, option_c=c, option_d=d,
-                correct_answer=correct, explanation=explanation, sort_order=i,
+        for course in courses:
+            qdef = quiz_templates.get(course.title)
+            if qdef:
+                # Link quiz to first module of this course
+                result = await db.execute(
+                    select(Module).where(Module.course_id == course.id).order_by(Module.sort_order).limit(1)
+                )
+                first_module = result.scalar_one_or_none()
+                if first_module:
+                    quiz = Quiz(
+                        module_id=first_module.id, title=qdef["title"],
+                        time_limit_seconds=45, passing_score=0.7,
+                        xp_reward=250, is_published=True,
+                    )
+                    db.add(quiz)
+                    await db.flush()
+                    for qi, (q_text, code, a, b, c, d, correct, explanation) in enumerate(qdef["questions"]):
+                        qq = QuizQuestion(
+                            quiz_id=quiz.id, question_text=q_text, code_snippet=code or None,
+                            option_a=a, option_b=b, option_c=c, option_d=d,
+                            correct_answer=correct, explanation=explanation, sort_order=qi,
+                        )
+                        db.add(qq)
+
+        # ── User Progress for demo user ──────────────────────────
+        result = await db.execute(select(Lesson).limit(5))
+        first_lessons = result.scalars().all()
+        for lesson in first_lessons:
+            result = await db.execute(
+                select(Module).where(Module.id == lesson.module_id)
             )
-            db.add(q)
+            mod = result.scalar_one_or_none()
+            up = UserProgress(
+                user_id=demo.id,
+                course_id=mod.course_id if mod else 1,
+                module_id=lesson.module_id,
+                lesson_id=lesson.id,
+                status="completed",
+                xp_earned=lesson.xp_reward,
+                progress_percent=100.0,
+            )
+            db.add(up)
 
         # ── Achievements ────────────────────────────────────────
         achievements_data = [
@@ -176,9 +382,10 @@ async def seed():
         await db.commit()
         print("Seed data inserted successfully!")
         print(f"  - 2 users (admin + demo)")
-        print(f"  - 8 courses")
-        print(f"  - 12 modules with 36 lessons")
-        print(f"  - 1 quiz with 3 questions")
+        print(f"  - {len(courses)} courses")
+        print(f"  - Full modules & lessons for all courses")
+        print(f"  - 1 quiz per course (linked to first module)")
+        print(f"  - 5 user progress records for demo")
         print(f"  - 5 achievements")
 
 

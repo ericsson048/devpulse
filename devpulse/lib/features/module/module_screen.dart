@@ -57,7 +57,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
     }
   }
 
-  String _lessonTypeIcon(String type) {
+  String lessonTypeIcon(String type) {
     switch (type) {
       case 'code': return 'code';
       case 'quiz': return 'quiz';

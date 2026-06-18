@@ -21,7 +21,7 @@ export default function UsersPage() {
         color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontWeight: 700, fontSize: 13, flexShrink: 0,
       }}>
-        {row.display_name[0]}
+        {(row.display_name || '?')[0]}
       </div>
       <span style={{ fontWeight: 500 }}>{row.display_name}</span>
     </div>

@@ -1,6 +1,7 @@
 import type {
   TokenResponse, User, Course, CourseCreate, Module, ModuleCreate,
-  Lesson, LessonCreate, Quiz, BackofficeDashboard
+  Lesson, LessonCreate, Quiz, BackofficeDashboard, Achievement,
+  MediaItem
 } from './types';
 
 const API_BASE = 'http://localhost:8000/api';
@@ -81,6 +82,22 @@ export const api = {
 
   // Quizzes
   getQuiz: (id: number) => request<Quiz>(`/quizzes/admin/${id}`),
+  updateQuiz: (id: number, data: Partial<Quiz>) =>
+    request<Quiz>(`/quizzes/admin/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteQuiz: (id: number) =>
     request<{ ok: boolean }>(`/quizzes/${id}`, { method: 'DELETE' }),
+
+  // Achievements
+  listAchievements: () => request<Achievement[]>('/achievements/'),
+  createAchievement: (data: Partial<Achievement>) =>
+    request<Achievement>('/achievements/', { method: 'POST', body: JSON.stringify(data) }),
+  updateAchievement: (id: number, data: Partial<Achievement>) =>
+    request<Achievement>(`/achievements/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteAchievement: (id: number) =>
+    request<{ ok: boolean }>(`/achievements/${id}`, { method: 'DELETE' }),
+
+  // Media
+  listMedia: () => request<MediaItem[]>('/media/'),
+  deleteMedia: (id: number) =>
+    request<{ ok: boolean }>(`/media/${id}`, { method: 'DELETE' }),
 };

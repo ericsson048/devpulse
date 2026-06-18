@@ -82,6 +82,7 @@ export interface Lesson {
   xp_reward: number;
   is_published: boolean;
   created_at: string;
+  quiz_id: number | null;
 }
 
 export interface LessonCreate {
@@ -131,4 +132,24 @@ export interface BackofficeDashboard {
   total_quizzes: number;
   active_users_today: number;
   total_quiz_attempts: number;
+}
+
+export interface Achievement {
+  id: number;
+  title: string;
+  description: string | null;
+  icon: string | null;
+  icon_bg: string | null;
+  icon_color: string | null;
+  xp_reward: number;
+  condition_type: string | null;
+  condition_value: number | null;
+}
+
+export interface MediaItem {
+  id: number;
+  filename: string;
+  url: string;
+  mime_type: string;
+  file_size: number;
 }

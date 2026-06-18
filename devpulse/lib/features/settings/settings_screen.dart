@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_animations.dart';
+import '../../core/services/api_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,10 +15,25 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  Map<String, dynamic>? _user;
+
   bool _notifications = true;
   bool _dailyReminder = true;
   bool _soundEffects = false;
   bool _haptics = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final user = await ApiService.getUserProfile();
+      if (mounted) setState(() { _user = user; });
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -159,6 +176,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildAccountCard(BuildContext context) {
+    final name = _user?['display_name'] as String? ?? 'Developer';
+    final email = _user?['email'] as String? ?? '';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -185,10 +204,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Developer',
+                Text(name,
                     style: AppTextStyles.bodyMd(color: AppColors.onSurface)
                         .copyWith(fontWeight: FontWeight.w700)),
-                Text('dev@pulse.io',
+                Text(email,
                     style: AppTextStyles.labelSm(
                         color: AppColors.onSurfaceVariant)),
               ],
@@ -235,7 +254,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         message: 'Are you sure you want to sign out?',
         confirmLabel: 'Sign Out',
         confirmColor: AppColors.error,
-        onConfirm: () {
+        onConfirm: () async {
+          ApiService.setToken(null);
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('auth_token');
           Navigator.pop(context);
           context.go('/auth');
         },

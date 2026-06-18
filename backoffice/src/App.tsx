@@ -7,6 +7,9 @@ import Courses from './pages/Courses';
 import CourseDetail from './pages/CourseDetail';
 import Users from './pages/Users';
 import Quizzes from './pages/Quizzes';
+import QuizDetail from './pages/QuizDetail';
+import Achievements from './pages/Achievements';
+import Media from './pages/Media';
 
 function App() {
   return (
@@ -20,6 +23,9 @@ function App() {
             <Route path="/courses/:id" element={<CourseDetail />} />
             <Route path="/users" element={<Users />} />
             <Route path="/quizzes" element={<Quizzes />} />
+            <Route path="/quizzes/:id" element={<QuizDetail />} />
+            <Route path="/achievements" element={<Achievements />} />
+            <Route path="/media" element={<Media />} />
           </Route>
         </Routes>
       </AuthProvider>

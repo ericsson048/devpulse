@@ -7,7 +7,7 @@ class AppConfig {
   AppConfig._();
 
   /// Base URL of the FastAPI backend, WITHOUT trailing slash.
-  static const String apiBaseUrl = 'http://10.0.2.2:8000'; // Android emulator
+  static const String apiBaseUrl = 'http://192.168.10.103:8000'; // Android emulator
   // static const String apiBaseUrl = 'http://localhost:8000'; // Web / iOS sim
 
   /// Resolve a media path returned by the backend (e.g. "/api/media/videos/abc.mp4")

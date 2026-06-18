@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { Course, Module, Lesson } from '../types';
 import { DataTable } from 'primereact/datatable';
@@ -14,6 +15,7 @@ interface QuizInfo {
 }
 
 export default function Quizzes() {
+  const navigate = useNavigate();
   const [quizzes, setQuizzes] = useState<QuizInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,6 +66,7 @@ export default function Quizzes() {
 
   const actionsBody = (row: QuizInfo) => (
     <div style={{ display: 'flex', gap: 4 }}>
+      <Button icon="pi pi-eye" text rounded size="small" onClick={() => row.lesson.quiz_id && navigate(`/quizzes/${row.lesson.quiz_id}`)} />
       <Button icon={row.lesson.is_published ? 'pi pi-eye' : 'pi pi-eye-slash'} severity={row.lesson.is_published ? 'success' : 'secondary'} text rounded size="small" onClick={() => togglePublish(row.lesson)} />
       <Button icon="pi pi-trash" severity="danger" text rounded size="small" onClick={() => handleDelete(row.lesson.id)} />
     </div>

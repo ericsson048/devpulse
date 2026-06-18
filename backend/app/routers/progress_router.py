@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import User, UserProgress, Course, Module, Quiz, QuizAttempt, Achievement
@@ -33,7 +34,9 @@ async def complete_lesson(
     else:
         # Get the lesson's module/course
         from app.models import Lesson
-        lesson_q = await db.execute(select(Lesson).where(Lesson.id == body.lesson_id))
+        lesson_q = await db.execute(
+            select(Lesson).options(selectinload(Lesson.module)).where(Lesson.id == body.lesson_id)
+        )
         lesson = lesson_q.scalar_one_or_none()
         if not lesson:
             raise HTTPException(status_code=404, detail="Lesson not found")

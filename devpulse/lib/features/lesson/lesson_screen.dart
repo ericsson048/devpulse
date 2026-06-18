@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:video_player/video_player.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/widgets.dart';
@@ -10,6 +11,7 @@ import '../../core/widgets/dp_markdown.dart';
 import '../../core/utils/app_animations.dart';
 import '../../core/utils/app_config.dart';
 import '../../core/services/api_service.dart';
+import '../../core/utils/toast.dart';
 import '../../core/router/app_router.dart';
 
 // ── Data model (matches LessonOut from backend) ───────────────────
@@ -99,10 +101,15 @@ class _LessonScreenState extends State<LessonScreen>
   bool _loading = true;
   String? _error;
 
+  // Video player state
+  VideoPlayerController? _videoCtrl;
+  bool _videoInitialized = false;
+
   // Code editor state
   late final TextEditingController _codeCtrl;
   bool _running = false;
   bool _hasOutput = false;
+  Map<String, dynamic>? _outputResult;
   late final AnimationController _runCtrl =
       AnimationController(vsync: this, duration: 1500.ms);
 
@@ -134,14 +141,32 @@ class _LessonScreenState extends State<LessonScreen>
         _loading = false;
       });
       _codeCtrl.text = lesson.codeTemplate ?? '';
+      if (lesson.videoUrl != null) {
+        _initVideo(lesson.videoUrl!);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
+  void _initVideo(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.host.contains('youtube') || uri.host.contains('youtu.be')) {
+      return;
+    }
+    _videoCtrl = VideoPlayerController.networkUrl(uri);
+    _videoCtrl!.initialize().then((_) {
+      if (mounted) setState(() => _videoInitialized = true);
+    }).catchError((_) {});
+    _videoCtrl!.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   void dispose() {
+    _videoCtrl?.dispose();
     _codeCtrl.dispose();
     _runCtrl.dispose();
     super.dispose();
@@ -150,8 +175,25 @@ class _LessonScreenState extends State<LessonScreen>
   Future<void> _runCode() async {
     setState(() { _running = true; _hasOutput = false; });
     _runCtrl.forward(from: 0);
-    await Future.delayed(1600.ms);
-    if (mounted) setState(() { _running = false; _hasOutput = true; });
+    try {
+      final lang = _lesson?.codeLanguage ?? 'python';
+      final result = await ApiService.executeCode(lang, _codeCtrl.text);
+      if (mounted) {
+        setState(() {
+          _running = false;
+          _hasOutput = true;
+          _outputResult = result;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _running = false;
+          _hasOutput = true;
+          _outputResult = {'stdout': '', 'stderr': 'Error: $e', 'exit_code': -1};
+        });
+      }
+    }
   }
 
   @override
@@ -280,75 +322,111 @@ class _LessonScreenState extends State<LessonScreen>
 
   // ── Video Player ──────────────────────────────────────────────
   Widget _buildVideoPlayer(String url) {
-    return Container(
-      height: 200,
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.outlineVariant),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.05),
-            blurRadius: 32,
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.primaryContainer.withValues(alpha: 0.2),
-                  AppColors.surfaceContainerHighest,
-                ],
+    final uri = Uri.tryParse(url);
+    final isYoutube = uri != null && (uri.host.contains('youtube') || uri.host.contains('youtu.be'));
+
+    if (isYoutube) {
+      return Container(
+        height: 200,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.outlineVariant),
+        ),
+        child: Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.primaryContainer.withValues(alpha: 0.2),
+                    AppColors.surfaceContainerHighest,
+                  ],
+                ),
               ),
             ),
-          ),
-          Center(
-            child: Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.4),
-                    blurRadius: 20,
+            Center(
+              child: Container(
+                width: 64, height: 64,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.4), blurRadius: 20)],
+                ),
+                child: const Icon(Icons.play_arrow, color: AppColors.onPrimary, size: 32),
+              ),
+            ),
+            Positioned(
+              bottom: 12, left: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(6)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.ondemand_video, color: Colors.white70, size: 13),
+                    const SizedBox(width: 6),
+                    Text('Watch video', style: AppTextStyles.labelSm(color: Colors.white70).copyWith(fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_videoCtrl != null && _videoInitialized) {
+      return Container(
+        height: 220,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          alignment: Alignment.bottomCenter,
+          children: [
+            VideoPlayer(_videoCtrl!),
+            VideoProgressIndicator(_videoCtrl!, allowScrubbing: true,
+              colors: VideoProgressColors(
+                playedColor: AppColors.primary,
+                bufferedColor: AppColors.primary.withValues(alpha: 0.3),
+                backgroundColor: AppColors.surfaceVariant,
+              ),
+            ),
+            Positioned(
+              top: 8, right: 8,
+              child: GestureDetector(
+                onTap: () {
+                  if (_videoCtrl!.value.isPlaying) {
+                    _videoCtrl!.pause();
+                  } else {
+                    _videoCtrl!.play();
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
                   ),
-                ],
-              ),
-              child: const Icon(Icons.play_arrow, color: AppColors.onPrimary, size: 32),
-            ),
-          ),
-          Positioned(
-            bottom: 12,
-            left: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.ondemand_video, color: Colors.white70, size: 13),
-                  const SizedBox(width: 6),
-                  Text('Watch video',
-                      style: AppTextStyles.labelSm(color: Colors.white70)
-                          .copyWith(fontSize: 11)),
-                ],
+                  child: Icon(
+                    _videoCtrl!.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                    color: Colors.white, size: 20,
+                  ),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
   }
 
   // ── Markdown Content ──────────────────────────────────────────
@@ -464,12 +542,7 @@ class _LessonScreenState extends State<LessonScreen>
                       onTap: () {
                         Clipboard.setData(
                             ClipboardData(text: _codeCtrl.text));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Code copied to clipboard'),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
+                        showToast(context, message: 'Code copied to clipboard', type: ToastType.success);
                       },
                       child: Row(
                         children: [
@@ -701,18 +774,13 @@ class _LessonScreenState extends State<LessonScreen>
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text('Compiling…',
+                      Text('Running…',
                           style: AppTextStyles.codeBlock(
                                   color: AppColors.onSurfaceVariant)
                               .copyWith(fontSize: 12)),
                     ],
                   )
-                : Text(
-                    'Hello, DevPulse!\nProcess finished with exit code 0',
-                    style: AppTextStyles.codeBlock(
-                            color: AppColors.secondary)
-                        .copyWith(fontSize: 13, height: 1.7),
-                  ).animate().fadeIn(duration: 400.ms),
+                : _buildOutputContent(),
           ),
         ],
       ),
@@ -778,16 +846,19 @@ class _LessonScreenState extends State<LessonScreen>
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
-        SizedBox(
-          width: double.infinity,
-          height: 54,
-          child: ElevatedButton.icon(
-            onPressed: () {
-              setState(() => _completed = true);
-              Future.delayed(600.ms, () {
-                if (mounted) context.go('/app/quiz');
-              });
-            },
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                try {
+                  await ApiService.completeLesson(widget.lessonId!);
+                } catch (_) {}
+                setState(() => _completed = true);
+                Future.delayed(600.ms, () {
+                  if (mounted) context.go(AppRoutes.quizPath(widget.lessonId!));
+                });
+              },
             icon: Text(
               _completed ? 'Completed!' : 'Mark as Complete',
               style: AppTextStyles.bodyMd(
@@ -818,6 +889,32 @@ class _LessonScreenState extends State<LessonScreen>
         XpProgressBar(current: 8450, total: 10000, label: 'Level 42 Progress'),
       ],
     );
+  }
+
+  Widget _buildOutputContent() {
+    final stdout = _outputResult?['stdout'] as String? ?? '';
+    final stderr = _outputResult?['stderr'] as String? ?? '';
+    final exitCode = _outputResult?['exit_code'] as int? ?? 0;
+    final hasError = stderr.isNotEmpty || exitCode != 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (stdout.isNotEmpty)
+          Text(stdout,
+              style: AppTextStyles.codeBlock(color: AppColors.secondary)
+                  .copyWith(fontSize: 13, height: 1.7)),
+        if (stderr.isNotEmpty)
+          Text(stderr,
+              style: AppTextStyles.codeBlock(color: AppColors.error)
+                  .copyWith(fontSize: 13, height: 1.7)),
+        if (stdout.isEmpty && stderr.isEmpty)
+          Text('Process finished with exit code $exitCode',
+              style: AppTextStyles.codeBlock(
+                      color: hasError ? AppColors.error : AppColors.secondary)
+                  .copyWith(fontSize: 13, height: 1.7)),
+      ],
+    ).animate().fadeIn(duration: 400.ms);
   }
 
   Color _langColor(String? lang) {

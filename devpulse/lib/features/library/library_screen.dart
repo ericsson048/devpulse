@@ -6,10 +6,11 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_animations.dart';
 import '../../core/widgets/widgets.dart';
 import '../../core/router/app_router.dart';
+import '../../core/services/api_service.dart';
+import '../../core/utils/toast.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
-
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
@@ -18,120 +19,94 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int _selectedFilter = 0;
   String _searchQuery = '';
   final _searchCtrl = TextEditingController();
+  List<Map<String, dynamic>> _courses = [];
+  bool _loading = true;
+  String? _error;
+  final Set<int> _enrolling = {};
 
   static const _filters = ['All', 'Beginner', 'Intermediate', 'Advanced'];
 
-  static const _courses = [
-    _CourseItem(
-      title: 'Python Fundamentals',
-      subtitle: 'Start your coding journey',
-      tag: 'Python',
-      level: 'Beginner',
-      modules: 10,
-      xp: 500,
-      icon: Icons.code_rounded,
-      color: AppColors.secondary,
-      enrolled: true,
-      progress: 0.6,
-    ),
-    _CourseItem(
-      title: 'Node.js & Express',
-      subtitle: 'Build scalable backends',
-      tag: 'Node.js',
-      level: 'Intermediate',
-      modules: 12,
-      xp: 750,
-      icon: Icons.storage_rounded,
-      color: AppColors.primary,
-      enrolled: true,
-      progress: 0.35,
-    ),
-    _CourseItem(
-      title: 'Rust Systems Programming',
-      subtitle: 'Memory-safe performance',
-      tag: 'Rust',
-      level: 'Advanced',
-      modules: 15,
-      xp: 1200,
-      icon: Icons.memory_rounded,
-      color: AppColors.tertiary,
-      enrolled: false,
-      progress: 0,
-    ),
-    _CourseItem(
-      title: 'Go Microservices',
-      subtitle: 'Cloud-native development',
-      tag: 'Go',
-      level: 'Intermediate',
-      modules: 8,
-      xp: 600,
-      icon: Icons.hub_rounded,
-      color: AppColors.primary,
-      enrolled: false,
-      progress: 0,
-    ),
-    _CourseItem(
-      title: 'TypeScript Design Patterns',
-      subtitle: 'Enterprise-grade TypeScript',
-      tag: 'TypeScript',
-      level: 'Advanced',
-      modules: 10,
-      xp: 900,
-      icon: Icons.javascript_rounded,
-      color: AppColors.secondary,
-      enrolled: true,
-      progress: 1.0,
-    ),
-    _CourseItem(
-      title: 'Docker & Kubernetes',
-      subtitle: 'Container orchestration',
-      tag: 'DevOps',
-      level: 'Intermediate',
-      modules: 12,
-      xp: 800,
-      icon: Icons.cloud_queue_rounded,
-      color: AppColors.tertiary,
-      enrolled: false,
-      progress: 0,
-    ),
-    _CourseItem(
-      title: 'GraphQL API Design',
-      subtitle: 'Modern API architecture',
-      tag: 'API',
-      level: 'Intermediate',
-      modules: 6,
-      xp: 450,
-      icon: Icons.account_tree_rounded,
-      color: AppColors.primary,
-      enrolled: false,
-      progress: 0,
-    ),
-    _CourseItem(
-      title: 'SQL & PostgreSQL',
-      subtitle: 'Master relational databases',
-      tag: 'Database',
-      level: 'Beginner',
-      modules: 9,
-      xp: 550,
-      icon: Icons.table_chart_rounded,
-      color: AppColors.secondary,
-      enrolled: false,
-      progress: 0,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-  List<_CourseItem> get _filtered {
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final data = await ApiService.getCoursesPaginated(limit: 100);
+      if (mounted) setState(() {
+        _courses = (data['items'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  static IconData _iconData(String? icon) {
+    switch (icon) {
+      case 'storage': return Icons.storage_rounded;
+      case 'memory': return Icons.memory_rounded;
+      case 'cloud': return Icons.cloud_queue_rounded;
+      case 'hub': return Icons.hub_rounded;
+      case 'javascript': return Icons.javascript_rounded;
+      case 'table': return Icons.table_chart_rounded;
+      default: return Icons.code_rounded;
+    }
+  }
+
+  static Color _colorFor(String? lvl) {
+    switch (lvl?.toLowerCase()) {
+      case 'beginner': return AppColors.secondary;
+      case 'intermediate': return AppColors.primary;
+      case 'advanced': return AppColors.tertiary;
+      default: return AppColors.primary;
+    }
+  }
+
+  double _progressFor(Map<String, dynamic> c) {
+    final s = c['user_status'] as String? ?? 'not_started';
+    if (s == 'not_started') return 0.0;
+    return (c['progress_percent'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  bool _isEnrolled(Map<String, dynamic> c) {
+    final s = c['user_status'] as String? ?? 'not_started';
+    return s == 'in_progress' || s == 'completed';
+  }
+
+  Future<void> _handleEnroll(int courseId) async {
+    setState(() => _enrolling.add(courseId));
+    try {
+      await ApiService.enrollCourse(courseId);
+      if (mounted) {
+        showToast(context, message: 'Inscrit au cours !', type: ToastType.success);
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        showToast(context, message: 'Erreur : $e', type: ToastType.error);
+        setState(() => _enrolling.remove(courseId));
+      }
+    }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
     final byLevel = _selectedFilter == 0
         ? _courses
-        : _courses
-            .where((c) => c.level == _filters[_selectedFilter])
-            .toList();
+        : _courses.where((c) {
+            final lvl = (c['level'] as String? ?? '').toLowerCase();
+            return lvl == _filters[_selectedFilter].toLowerCase();
+          }).toList();
     if (_searchQuery.isEmpty) return byLevel;
-    return byLevel
-        .where((c) =>
-            c.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            c.tag.toLowerCase().contains(_searchQuery.toLowerCase()))
-        .toList();
+    final q = _searchQuery.toLowerCase();
+    return byLevel.where((c) {
+      final title = (c['title'] as String? ?? '').toLowerCase();
+      final tag = (c['tag'] as String? ?? '').toLowerCase();
+      return title.contains(q) || tag.contains(q);
+    }).toList();
   }
 
   @override
@@ -147,29 +122,79 @@ class _LibraryScreenState extends State<LibraryScreen> {
       appBar: const DevPulseAppBar(),
       body: Column(
         children: [
-          // Search + filters (sticky)
           _buildSearchBar(),
           _buildFilters(),
-          // Course grid
-          Expanded(
-            child: _filtered.isEmpty
-                ? _buildEmpty()
-                : ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                    itemCount: _filtered.length,
-                    itemBuilder: (_, i) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _CourseCard(
-                        course: _filtered[i],
-                        index: i,
-                        onTap: () => context.go(AppRoutes.modulePath(1)),
-                      ),
-                    ),
-                  ),
-          ),
+          Expanded(child: _buildBody()),
         ],
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 48, color: AppColors.error),
+              const SizedBox(height: 16),
+              Text('Could not load courses',
+                  style: AppTextStyles.headlineMd(color: AppColors.onSurface)),
+              const SizedBox(height: 8),
+              Text(_error!,
+                  style: AppTextStyles.bodyMd(color: AppColors.onSurfaceVariant),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 24),
+              ElevatedButton(onPressed: _load, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+    final filtered = _filtered;
+    if (filtered.isEmpty) return _buildEmpty();
+    return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      itemCount: filtered.length,
+      itemBuilder: (_, i) {
+        final c = filtered[i];
+        final id = c['id'] as int? ?? 1;
+        final title = c['title'] as String? ?? '';
+        final tag = c['tag'] as String? ?? '';
+        final level = c['level'] as String? ?? 'Beginner';
+        final modules = c['total_modules'] as int? ?? 0;
+        final xp = c['total_xp'] as int? ?? 0;
+        final icon = c['icon'] as String?;
+        final subtitle = c['description'] as String? ?? '';
+          final enrolled = _isEnrolled(c);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _CourseCard(
+              course: _CourseItem(
+                title: title,
+                subtitle: subtitle,
+                tag: tag,
+                level: level,
+                modules: modules,
+                xp: xp,
+                icon: _iconData(icon),
+                color: _colorFor(level),
+                enrolled: enrolled,
+                progress: _progressFor(c),
+              ),
+              index: i,
+              enrolling: _enrolling.contains(id),
+              onTap: () => context.go(AppRoutes.modulePath(id)),
+              onEnroll: enrolled ? null : () => _handleEnroll(id),
+            ),
+          );
+      },
     );
   }
 
@@ -189,7 +214,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           onChanged: (v) => setState(() => _searchQuery = v),
           style: AppTextStyles.bodyMd(color: AppColors.onSurface),
           decoration: InputDecoration(
-            hintText: 'Search courses, languages...',
+            hintText: 'Search courses...',
             hintStyle: AppTextStyles.bodyMd(color: AppColors.onSurfaceVariant)
                 .copyWith(fontSize: 14),
             prefixIcon: const Icon(Icons.search_rounded,
@@ -293,10 +318,14 @@ class _CourseCard extends StatefulWidget {
     required this.course,
     required this.index,
     required this.onTap,
+    this.enrolling = false,
+    this.onEnroll,
   });
   final _CourseItem course;
   final int index;
   final VoidCallback onTap;
+  final bool enrolling;
+  final VoidCallback? onEnroll;
 
   @override
   State<_CourseCard> createState() => _CourseCardState();
@@ -336,20 +365,13 @@ class _CourseCardState extends State<_CourseCard>
                   : AppColors.outlineVariant.withValues(alpha: 0.2),
             ),
             boxShadow: c.enrolled
-                ? [
-                    BoxShadow(
-                      color: c.color.withValues(alpha: 0.05),
-                      blurRadius: 16,
-                    )
-                  ]
+                ? [BoxShadow(color: c.color.withValues(alpha: 0.05), blurRadius: 16)]
                 : null,
           ),
           child: Row(
             children: [
-              // Icon
               Container(
-                width: 52,
-                height: 52,
+                width: 52, height: 52,
                 decoration: BoxDecoration(
                   color: c.color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
@@ -357,7 +379,6 @@ class _CourseCardState extends State<_CourseCard>
                 child: Icon(c.icon, color: c.color, size: 26),
               ),
               const SizedBox(width: 14),
-              // Info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -366,11 +387,9 @@ class _CourseCardState extends State<_CourseCard>
                       children: [
                         Expanded(
                           child: Text(c.title,
-                              style: AppTextStyles.bodyMd(
-                                      color: AppColors.onSurface)
+                              style: AppTextStyles.bodyMd(color: AppColors.onSurface)
                                   .copyWith(fontWeight: FontWeight.w700),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),
                         if (c.progress >= 1.0)
                           const Icon(Icons.check_circle_rounded,
@@ -379,23 +398,16 @@ class _CourseCardState extends State<_CourseCard>
                     ),
                     const SizedBox(height: 2),
                     Text(c.subtitle,
-                        style: AppTextStyles.labelSm(
-                                color: AppColors.onSurfaceVariant)
+                        style: AppTextStyles.labelSm(color: AppColors.onSurfaceVariant)
                             .copyWith(fontSize: 12)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
                         _Chip(label: c.tag, color: c.color),
                         const SizedBox(width: 6),
-                        _Chip(
-                          label: c.level,
-                          color: _levelColor(c.level),
-                        ),
+                        _Chip(label: c.level, color: _levelColor(c.level)),
                         const SizedBox(width: 6),
-                        _Chip(
-                          label: '+${c.xp} XP',
-                          color: AppColors.secondary,
-                        ),
+                        _Chip(label: '+${c.xp} XP', color: AppColors.secondary),
                       ],
                     ),
                     if (c.enrolled && c.progress > 0 && c.progress < 1.0) ...[
@@ -405,8 +417,7 @@ class _CourseCardState extends State<_CourseCard>
                         child: LinearProgressIndicator(
                           value: c.progress,
                           minHeight: 4,
-                          backgroundColor:
-                              AppColors.surfaceVariant.withValues(alpha: 0.5),
+                          backgroundColor: AppColors.surfaceVariant.withValues(alpha: 0.5),
                           valueColor: AlwaysStoppedAnimation<Color>(c.color),
                         ),
                       ),
@@ -415,11 +426,28 @@ class _CourseCardState extends State<_CourseCard>
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.onSurfaceVariant.withValues(alpha: 0.5),
-                size: 20,
-              ),
+              if (widget.enrolling)
+                const SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                )
+              else if (widget.onEnroll != null)
+                GestureDetector(
+                  onTap: widget.onEnroll,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text("S'incrire",
+                        style: AppTextStyles.labelSm(color: AppColors.onPrimary)
+                            .copyWith(fontWeight: FontWeight.w700, fontSize: 11)),
+                  ),
+                )
+              else
+                Icon(Icons.chevron_right_rounded,
+                    color: AppColors.onSurfaceVariant.withValues(alpha: 0.5), size: 20),
             ],
           ),
         ),
@@ -429,14 +457,10 @@ class _CourseCardState extends State<_CourseCard>
 
   Color _levelColor(String level) {
     switch (level) {
-      case 'Beginner':
-        return AppColors.secondary;
-      case 'Intermediate':
-        return AppColors.primary;
-      case 'Advanced':
-        return AppColors.tertiary;
-      default:
-        return AppColors.outline;
+      case 'Beginner': return AppColors.secondary;
+      case 'Intermediate': return AppColors.primary;
+      case 'Advanced': return AppColors.tertiary;
+      default: return AppColors.outline;
     }
   }
 }

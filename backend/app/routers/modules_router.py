@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
-from app.models import Module, Lesson, User
+from app.models import Module, Lesson, Quiz, User
 from app.schemas import ModuleCreate, ModuleUpdate, ModuleOut, LessonCreate, LessonUpdate, LessonOut
 from app.auth import get_admin_user
 
@@ -33,7 +33,34 @@ async def get_lesson(lesson_id: int, db: AsyncSession = Depends(get_db)):
     lesson = result.scalar_one_or_none()
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    return lesson
+
+    out = LessonOut(
+        id=lesson.id,
+        module_id=lesson.module_id,
+        title=lesson.title,
+        lesson_type=lesson.lesson_type,
+        content=lesson.content,
+        video_url=lesson.video_url,
+        resources=lesson.resources,
+        code_template=lesson.code_template,
+        code_language=lesson.code_language,
+        has_editor=lesson.has_editor,
+        sort_order=lesson.sort_order,
+        xp_reward=lesson.xp_reward,
+        is_published=lesson.is_published,
+        created_at=lesson.created_at,
+    )
+
+    # If lesson is a quiz, fetch the associated quiz_id for the module
+    if lesson.lesson_type == "quiz":
+        quiz_result = await db.execute(
+            select(Quiz).where(Quiz.module_id == lesson.module_id).limit(1)
+        )
+        quiz = quiz_result.scalar_one_or_none()
+        if quiz:
+            out.quiz_id = quiz.id
+
+    return out
 
 
 # ── Admin CRUD ────────────────────────────────────────────────────

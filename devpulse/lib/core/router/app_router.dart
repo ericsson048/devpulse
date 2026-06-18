@@ -40,6 +40,8 @@ class AppRoutes {
   static String modulePath(int moduleId) => '/app/module/$moduleId';
   /// Helper to build lesson route path
   static String lessonPath(int lessonId) => '/app/lesson/$lessonId';
+  /// Helper to build quiz route path
+  static String quizPath(int lessonId) => '/app/quiz/$lessonId';
 }
 
 final appRouter = GoRouter(
@@ -95,8 +97,11 @@ final appRouter = GoRouter(
           },
         ),
         GoRoute(
-          path: AppRoutes.quiz,
-          builder: (_, __) => const QuizScreen(),
+          path: '/app/quiz/:lessonId',
+          builder: (_, state) {
+            final id = int.parse(state.pathParameters['lessonId']!);
+            return QuizScreen(lessonId: id);
+          },
         ),
         GoRoute(
           path: AppRoutes.quizResult,

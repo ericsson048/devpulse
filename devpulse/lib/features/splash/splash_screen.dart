@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/router/app_router.dart';
 import '../../core/utils/app_animations.dart';
+import '../../core/services/api_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -75,7 +76,17 @@ class _SplashScreenState extends State<SplashScreen>
       Future.delayed(Duration(milliseconds: rng.nextInt(180) + 40), _tick);
     } else {
       setState(() => _statusText = 'SYSTEM_READY');
-      Future.delayed(const Duration(milliseconds: 1000), () {
+      Future.delayed(const Duration(milliseconds: 1000), () async {
+        if (!mounted) return;
+        await ApiService.loadToken();
+        if (ApiService.token != null) {
+          try {
+            await ApiService.getMe();
+            if (mounted) { context.go('/app/home'); return; }
+          } catch (_) {
+            ApiService.setToken(null);
+          }
+        }
         if (mounted) context.go(AppRoutes.onboarding);
       });
     }

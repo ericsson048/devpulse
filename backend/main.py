@@ -11,6 +11,8 @@ from app.routers import (
     quizzes_router,
     progress_router,
     media_router,
+    achievements_router,
+    code_exec_router,
 )
 
 
@@ -43,6 +45,8 @@ app.include_router(modules_router.router, prefix="/api")
 app.include_router(quizzes_router.router, prefix="/api")
 app.include_router(progress_router.router, prefix="/api")
 app.include_router(media_router.router, prefix="/api")
+app.include_router(achievements_router.router, prefix="/api")
+app.include_router(code_exec_router.router, prefix="/api")
 
 
 @app.get("/")

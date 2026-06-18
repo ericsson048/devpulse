@@ -6,39 +6,157 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/widgets.dart';
 import '../../core/utils/app_animations.dart';
+import '../../core/services/api_service.dart';
 
 class QuizScreen extends StatefulWidget {
-  const QuizScreen({super.key});
+  final int lessonId;
+  const QuizScreen({super.key, required this.lessonId});
   @override
   State<QuizScreen> createState() => _QuizScreenState();
 }
 
 class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
+  Map<String, dynamic>? _quiz;
+  List<dynamic> _questions = [];
+  int _currentIndex = 0;
   int? _selected;
   bool _answered = false;
   int _timeLeft = 45;
   Timer? _timer;
   late final AnimationController _shakeCtrl;
-
-  static const _options = [
-    's1 is cloned and both are valid',
-    's1 is moved to s2 and is no longer valid',
-    's1 becomes a reference to s2',
-    'A compile-time error occurs at the assignment',
-  ];
-  static const _correctIndex = 1;
+  int _score = 0;
+  bool _loading = true;
+  String? _error;
+  int _correctCount = 0;
+  final List<int> _userAnswers = [];
 
   @override
   void initState() {
     super.initState();
     _shakeCtrl = AnimationController(vsync: this, duration: 400.ms);
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      // Fetch lesson to get quiz_id
+      final lesson = await ApiService.getLesson(widget.lessonId);
+      final quizId = lesson['quiz_id'] as int?;
+      if (quizId == null) {
+        if (mounted) setState(() { _error = 'No quiz associated with this lesson'; _loading = false; });
+        return;
+      }
+      final quizData = await ApiService.getQuiz(quizId);
+      if (mounted) {
+        setState(() {
+          _quiz = quizData;
+          _questions = quizData['questions'] as List<dynamic>? ?? [];
+          _userAnswers.clear();
+          _userAnswers.addAll(List.filled(_questions.length, -1));
+          _timeLeft = quizData['time_limit_seconds'] as int? ?? 45;
+          _loading = false;
+        });
+        _startTimer();
+      }
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_timeLeft > 0) {
         setState(() => _timeLeft--);
       } else {
         _timer?.cancel();
+        if (!_answered) _checkAnswer();
       }
     });
+  }
+
+  dynamic get _currentQuestion =>
+      _currentIndex < _questions.length ? _questions[_currentIndex] : null;
+
+  String get _timerLabel {
+    final m = _timeLeft ~/ 60;
+    final s = _timeLeft % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  List<String> get _options {
+    final q = _currentQuestion;
+    if (q == null) return [];
+    final opts = <String>[];
+    if (q['option_a'] != null) opts.add(q['option_a'] as String);
+    if (q['option_b'] != null) opts.add(q['option_b'] as String);
+    if (q['option_c'] != null) opts.add(q['option_c'] as String);
+    if (q['option_d'] != null) opts.add(q['option_d'] as String);
+    return opts;
+  }
+
+  int get _correctIndex {
+    final q = _currentQuestion;
+    return (q?['correct_answer'] as int?) ?? 0;
+  }
+
+  void _checkAnswer() {
+    if (_selected == null) return;
+    final correct = _selected == _correctIndex;
+    setState(() => _answered = true);
+    _timer?.cancel();
+    if (!correct) {
+      _shakeCtrl.forward(from: 0);
+    } else {
+      _correctCount++;
+    }
+  }
+
+  void _next() {
+    if (_currentIndex + 1 < _questions.length) {
+      setState(() {
+        _currentIndex++;
+        _selected = null;
+        _answered = false;
+        _timeLeft = _quiz?['time_limit_seconds'] as int? ?? 45;
+      });
+      _startTimer();
+    } else {
+      _submitQuiz();
+    }
+  }
+
+  Future<void> _submitQuiz() async {
+    final quizId = _quiz?['id'] as int?;
+    if (quizId == null) {
+      _navigateToResult();
+      return;
+    }
+    final answers = <Map<String, dynamic>>[];
+    for (int i = 0; i < _questions.length; i++) {
+      answers.add({
+        'question_id': _questions[i]['id'],
+        'selected': _userAnswers[i],
+      });
+    }
+    try {
+      final result = await ApiService.submitQuiz(quizId, answers);
+      final score = result['score'] as int? ?? _correctCount;
+      final total = result['total'] as int? ?? _questions.length;
+      if (mounted) {
+        context.go('/app/quiz-result?score=$score&total=$total');
+      }
+    } catch (_) {
+      _navigateToResult();
+    }
+  }
+
+  void _navigateToResult() {
+    final total = _questions.length;
+    if (mounted) {
+      context.go('/app/quiz-result?score=$_correctCount&total=$total');
+    }
   }
 
   @override
@@ -48,24 +166,43 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  String get _timerLabel {
-    final m = _timeLeft ~/ 60;
-    final s = _timeLeft % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
-  void _checkAnswer() {
-    if (_selected == null) return;
-    setState(() => _answered = true);
-    _timer?.cancel();
-    // Shake on wrong answer
-    if (_selected != _correctIndex) {
-      _shakeCtrl.forward(from: 0);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: const DevPulseAppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: const DevPulseAppBar(),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off_rounded, size: 48, color: AppColors.error),
+                const SizedBox(height: 16),
+                Text('Could not load quiz',
+                    style: AppTextStyles.headlineMd(color: AppColors.onSurface)),
+                const SizedBox(height: 8),
+                Text(_error!,
+                    style: AppTextStyles.bodyMd(color: AppColors.onSurfaceVariant),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 24),
+                ElevatedButton(onPressed: _load, child: const Text('Retry')),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    final q = _currentQuestion;
+    if (q == null) return const SizedBox.shrink();
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: const DevPulseAppBar(),
@@ -76,8 +213,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader().fadeSlideUp(),
-            const SizedBox(height: 20),
-            _buildCodeBlock().fadeSlideUp(delay: 100.ms),
+            if (q['code_snippet'] != null) ...[
+              const SizedBox(height: 20),
+              _buildCodeBlock(q['code_snippet'] as String).fadeSlideUp(delay: 100.ms),
+            ],
             const SizedBox(height: 20),
             ..._buildOptions(),
             const SizedBox(height: 20),
@@ -91,6 +230,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildHeader() {
+    final q = _currentQuestion;
+    final questionText = q?['question_text'] as String? ?? '';
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -106,61 +247,23 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                   border: Border.all(
                       color: AppColors.primary.withValues(alpha: 0.2)),
                 ),
-                child: Text('QUESTION 4 OF 10',
+                child: Text('QUESTION ${_currentIndex + 1} OF ${_questions.length}',
                     style: AppTextStyles.labelSm(color: AppColors.primary)
                         .copyWith(letterSpacing: 2, fontSize: 11)),
               ),
               const SizedBox(height: 10),
-              RichText(
-                text: TextSpan(
-                  style: AppTextStyles.headlineMd(color: AppColors.onSurface),
-                  children: [
-                    const TextSpan(text: 'What happens to '),
-                    TextSpan(
-                      text: 's1',
-                      style: AppTextStyles.codeBlock(
-                              color: AppColors.primaryFixedDim)
-                          .copyWith(
-                        backgroundColor:
-                            AppColors.surfaceVariant.withValues(alpha: 0.5),
-                        fontSize: 14,
-                      ),
-                    ),
-                    const TextSpan(text: ' after assignment to '),
-                    TextSpan(
-                      text: 's2',
-                      style: AppTextStyles.codeBlock(
-                              color: AppColors.primaryFixedDim)
-                          .copyWith(
-                        backgroundColor:
-                            AppColors.surfaceVariant.withValues(alpha: 0.5),
-                        fontSize: 14,
-                      ),
-                    ),
-                    const TextSpan(text: '?'),
-                  ],
-                ),
-              ),
+              Text(questionText,
+                  style: AppTextStyles.headlineMd(color: AppColors.onSurface)),
             ],
           ),
         ),
         const SizedBox(width: 12),
-        // Animated timer
         _TimerBadge(label: _timerLabel, urgent: _timeLeft < 10),
       ],
     );
   }
 
-  Widget _buildCodeBlock() {
-    const kw = Color(0xFFFF79C6);
-    const fn = Color(0xFF50FA7B);
-    const str = Color(0xFFF1FA8C);
-    const comment = Color(0xFF6272A4);
-    const type = Color(0xFF8BE9FD);
-
-    TextStyle s(Color c) =>
-        AppTextStyles.codeBlock(color: c).copyWith(fontSize: 13);
-
+  Widget _buildCodeBlock(String snippet) {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
@@ -205,28 +308,11 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ),
           Padding(
             padding: const EdgeInsets.all(16),
-            child: RichText(
-              text: TextSpan(
-                style: s(AppColors.onSurface),
-                children: [
-                  TextSpan(text: 'fn ', style: s(kw)),
-                  TextSpan(text: 'main', style: s(fn)),
-                  const TextSpan(text: '() {\n  '),
-                  TextSpan(text: 'let ', style: s(kw)),
-                  const TextSpan(text: 's1 = '),
-                  TextSpan(text: 'String', style: s(type)),
-                  TextSpan(text: '::', style: s(kw)),
-                  TextSpan(text: 'from', style: s(kw)),
-                  TextSpan(text: '("hello");\n  ', style: s(str)),
-                  TextSpan(text: 'let ', style: s(kw)),
-                  const TextSpan(text: 's2 = s1;\n  '),
-                  TextSpan(text: '// What is the state of s1?\n  ',
-                      style: s(comment)),
-                  TextSpan(text: 'println!', style: s(fn)),
-                  TextSpan(text: '("{}", s1);\n', style: s(str)),
-                  const TextSpan(text: '}'),
-                ],
-              ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Text(snippet,
+                  style: AppTextStyles.codeBlock(color: AppColors.onSurface)
+                      .copyWith(fontSize: 13)),
             ),
           ),
         ],
@@ -241,8 +327,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             color: color.withValues(alpha: 0.6), shape: BoxShape.circle),
       );
 
+  void _selectAnswer(int idx) {
+    if (_answered) return;
+    setState(() => _selected = idx);
+    _userAnswers[_currentIndex] = idx;
+  }
+
   List<Widget> _buildOptions() {
-    return List.generate(_options.length, (i) {
+    final opts = _options;
+    return List.generate(opts.length, (i) {
       final selected = _selected == i;
       final correct = _answered && i == _correctIndex;
       final wrong = _answered && selected && i != _correctIndex;
@@ -250,12 +343,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: _OptionCard(
-          text: _options[i],
+          text: opts[i],
           selected: selected,
           correct: correct,
           wrong: wrong,
           answered: _answered,
-          onTap: _answered ? null : () => setState(() => _selected = i),
+          onTap: _answered ? null : () => _selectAnswer(i),
           shakeCtrl: wrong ? _shakeCtrl : null,
         ).staggered(i, offsetY: 12),
       );
@@ -264,7 +357,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   Widget _buildCheckButton() {
     return _PressableButton(
-      onTap: _answered ? () => context.go('/app/quiz-result?score=7&total=10') : _checkAnswer,
+      onTap: _answered ? _next : _checkAnswer,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         width: double.infinity,
@@ -298,22 +391,23 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildBottomCards() {
+    final q = _currentQuestion;
     return Column(
       children: [
-        // Hint card
+        // Explanation (shown after answering)
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: AppColors.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-                color: AppColors.outlineVariant.withValues(alpha: 0.2)),
+                color: _answered ? AppColors.secondary.withValues(alpha: 0.3)
+                    : AppColors.outlineVariant.withValues(alpha: 0.2)),
           ),
           child: Row(
             children: [
               Container(
-                width: 52,
-                height: 52,
+                width: 52, height: 52,
                 decoration: BoxDecoration(
                   color: AppColors.secondaryContainer.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
@@ -328,12 +422,14 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('HINT LEFT: 2/3',
+                    Text('EXPLANATION',
                         style: AppTextStyles.labelSm(color: AppColors.secondary)
                             .copyWith(letterSpacing: 1.5, fontSize: 11)),
                     const SizedBox(height: 4),
                     Text(
-                      'Rust uses an ownership model. Think "shallow copy" vs "move".',
+                      _answered
+                          ? (q?['explanation'] as String? ?? 'No explanation available')
+                          : 'Submit your answer to see the explanation.',
                       style: AppTextStyles.bodyMd(
                               color: AppColors.onSurfaceVariant)
                           .copyWith(fontSize: 13),
@@ -367,14 +463,18 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                         style: AppTextStyles.labelSm(color: AppColors.onSurface)
                             .copyWith(letterSpacing: 1.5, fontSize: 11)),
                   ]),
-                  Text('750 / 1000 XP',
+                  Text('${_quiz?['xp_reward'] ?? 0} XP',
                       style: AppTextStyles.codeBlock(
                               color: AppColors.onSurfaceVariant)
                           .copyWith(fontSize: 12)),
                 ],
               ),
               const SizedBox(height: 10),
-              XpProgressBar(current: 750, total: 1000, showLabel: false),
+              XpProgressBar(
+                current: (_score * 100) ~/ (_questions.length > 0 ? _questions.length : 1),
+                total: 100,
+                showLabel: false,
+              ),
               const SizedBox(height: 8),
               Text("You're 250 XP away from a new streak record!",
                   style: AppTextStyles.labelSm(

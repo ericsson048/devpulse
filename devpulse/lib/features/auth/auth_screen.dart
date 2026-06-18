@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/router/app_router.dart';
+import '../../core/services/api_service.dart';
 
 enum _AuthMode { signIn, signUp }
 
@@ -17,22 +18,38 @@ class _AuthScreenState extends State<AuthScreen> {
   _AuthMode _mode = _AuthMode.signIn;
   bool _obscure = true;
   bool _loading = false;
+  String? _error;
+  final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
 
   @override
   void dispose() {
+    _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    setState(() => _loading = true);
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) {
-      setState(() => _loading = false);
-      context.go('/app/home');
+    setState(() { _loading = true; _error = null; });
+    try {
+      Map<String, dynamic> result;
+      if (_mode == _AuthMode.signIn) {
+        result = await ApiService.login(_emailCtrl.text.trim(), _passCtrl.text);
+      } else {
+        result = await ApiService.register(
+          _emailCtrl.text.trim(),
+          _passCtrl.text,
+          _nameCtrl.text.trim().isEmpty ? 'Developer' : _nameCtrl.text.trim(),
+        );
+      }
+      ApiService.setToken(result['access_token'] as String?);
+      if (mounted) context.go('/app/home');
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString().replaceAll('HttpException: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -121,6 +138,16 @@ class _AuthScreenState extends State<AuthScreen> {
             padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
             child: Column(
               children: [
+                // Display name (sign up only)
+                if (_mode == _AuthMode.signUp) ...[
+                  _buildField(
+                    label: 'DISPLAY NAME',
+                    hint: 'Code Master',
+                    controller: _nameCtrl,
+                    icon: Icons.person_outline,
+                  ),
+                  const SizedBox(height: 20),
+                ],
                 // Email
                 _buildField(
                   label: 'WORK EMAIL',
@@ -133,6 +160,21 @@ class _AuthScreenState extends State<AuthScreen> {
                 // Password
                 _buildPasswordField(),
                 const SizedBox(height: 24),
+                // Error
+                if (_error != null)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(_error!,
+                        style: AppTextStyles.labelSm(color: AppColors.error)
+                            .copyWith(fontSize: 12)),
+                  ),
                 // Submit
                 _buildSubmitButton(),
                 const SizedBox(height: 24),

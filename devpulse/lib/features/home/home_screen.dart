@@ -5,31 +5,88 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_animations.dart';
 import '../../core/router/app_router.dart';
+import '../../core/services/api_service.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  Map<String, dynamic>? _dashboard;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final data = await ApiService.getHomeDashboard();
+      if (mounted) setState(() { _dashboard = data; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  String get _displayName => _dashboard?['display_name'] as String? ?? 'Developer';
+  int get _level => _dashboard?['level'] as int? ?? 1;
+  int get _streak => _dashboard?['streak'] as int? ?? 0;
+  int get _dailyGoal => _dashboard?['daily_goal_xp'] as int? ?? 1000;
+  int get _dailyEarned => _dashboard?['daily_xp_earned'] as int? ?? 0;
+  int get _achievementsCount => _dashboard?['achievements_count'] as int? ?? 0;
+  int get _globalRank => _dashboard?['global_rank'] as int? ?? 1;
+  List<dynamic> get _inProgressCourses => _dashboard?['in_progress_courses'] as List<dynamic>? ?? [];
+  List<dynamic> get _recommendedCourses => _dashboard?['recommended_courses'] as List<dynamic>? ?? [];
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off_rounded, size: 48, color: AppColors.error),
+                const SizedBox(height: 16),
+                Text('Could not load dashboard', style: AppTextStyles.headlineMd(color: AppColors.onSurface)),
+                const SizedBox(height: 8),
+                Text(_error!, style: AppTextStyles.bodyMd(color: AppColors.onSurfaceVariant), textAlign: TextAlign.center),
+                const SizedBox(height: 24),
+                ElevatedButton(onPressed: _load, child: const Text('Retry')),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // Atmospheric background
-          Positioned.fill(
-            child: CustomPaint(painter: const DotGridPainter()),
-          ),
+          Positioned.fill(child: CustomPaint(painter: const DotGridPainter())),
           Positioned(
-            top: -60,
-            right: -60,
+            top: -60, right: -60,
             child: Container(
-              width: 300,
-              height: 300,
+              width: 300, height: 300,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(colors: [
-                  AppColors.primary.withValues(alpha: 0.07),
-                  Colors.transparent,
+                  AppColors.primary.withValues(alpha: 0.07), Colors.transparent,
                 ]),
               ),
             ),
@@ -38,64 +95,53 @@ class HomeScreen extends StatelessWidget {
             child: CustomScrollView(
               physics: const BouncingScrollPhysics(),
               slivers: [
-                // App bar
                 SliverToBoxAdapter(child: _buildAppBar(context)),
-                // Greeting + streak
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: _buildGreeting(),
-                  ),
-                ),
-                // Daily XP card
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                    child: _buildDailyXpCard(),
-                  ),
-                ),
-                // Continue learning
-                SliverToBoxAdapter(
-                  child: Padding(
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: _buildGreeting(),
+                )),
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: _buildDailyXpCard(),
+                )),
+                if (_inProgressCourses.isNotEmpty) ...[
+                  SliverToBoxAdapter(child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
                     child: _buildSectionHeader('Continue Learning', onSeeAll: () {}),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildContinueLearning(context),
-                ),
-                // Quick stats
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
-                    child: _buildSectionHeader('Your Stats', onSeeAll: null),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: _buildStatsRow(),
-                  ),
-                ),
-                // Recommended
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
-                    child: _buildSectionHeader('Recommended for You',
-                        onSeeAll: () => context.go('/app/library')),
-                  ),
-                ),
+                  )),
+                  SliverToBoxAdapter(child: _buildContinueLearning()),
+                ],
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+                  child: _buildSectionHeader('Your Stats', onSeeAll: null),
+                )),
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _buildStatsRow(),
+                )),
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+                  child: _buildSectionHeader('Recommended for You',
+                      onSeeAll: () => context.go('/app/library')),
+                )),
                 SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (_, i) => Padding(
                       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                       child: _RecommendedCard(
-                        course: _recommended[i],
+                        course: _recommendedCourses.length > i ? _CourseData(
+                          title: _recommendedCourses[i]['title'] as String? ?? '',
+                          subtitle: '${_recommendedCourses[i]['total_modules'] ?? 0} modules',
+                          progress: 0,
+                          icon: Icons.code_rounded,
+                          color: AppColors.primary,
+                          tag: _recommendedCourses[i]['tag'] as String? ?? '',
+                        ) : _CourseData(title: '', subtitle: '', progress: 0, icon: Icons.code_rounded, color: AppColors.primary, tag: ''),
                         index: i,
                         onTap: () => context.go(AppRoutes.modulePath(1)),
                       ),
                     ),
-                    childCount: _recommended.length,
+                    childCount: _recommendedCourses.length,
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -154,11 +200,11 @@ class HomeScreen extends StatelessWidget {
           text: TextSpan(
             style: AppTextStyles.displayLgMobile(color: AppColors.onSurface)
                 .copyWith(fontSize: 26),
-            children: const [
-              TextSpan(text: 'Welcome back,\n'),
+            children: [
+              const TextSpan(text: 'Welcome back,\n'),
               TextSpan(
-                text: 'Developer 👋',
-                style: TextStyle(color: AppColors.primary),
+                text: '$_displayName 👋',
+                style: const TextStyle(color: AppColors.primary),
               ),
             ],
           ),
@@ -180,7 +226,7 @@ class HomeScreen extends StatelessWidget {
               const Icon(Icons.local_fire_department_rounded,
                   color: AppColors.secondary, size: 16),
               const SizedBox(width: 6),
-              Text('7 day streak — keep it up!',
+              Text('$_streak day streak — keep it up!',
                   style: AppTextStyles.labelSm(color: AppColors.secondary)
                       .copyWith(fontWeight: FontWeight.w700)),
             ],
@@ -225,7 +271,7 @@ class HomeScreen extends StatelessWidget {
                       style: AppTextStyles.labelSm(color: AppColors.primary)
                           .copyWith(letterSpacing: 2, fontSize: 11)),
                   const SizedBox(height: 4),
-                  Text('750 / 1000 XP',
+                  Text('$_dailyEarned / $_dailyGoal XP',
                       style: AppTextStyles.headlineMd(color: AppColors.onSurface)
                           .copyWith(fontSize: 20)),
                 ],
@@ -238,14 +284,14 @@ class HomeScreen extends StatelessWidget {
                   alignment: Alignment.center,
                   children: [
                     CircularProgressIndicator(
-                      value: 0.75,
+                      value: _dailyGoal > 0 ? _dailyEarned / _dailyGoal : 0.0,
                       strokeWidth: 4,
                       backgroundColor:
                           AppColors.surfaceVariant.withValues(alpha: 0.5),
                       valueColor: const AlwaysStoppedAnimation<Color>(
                           AppColors.primary),
                     ),
-                    Text('75%',
+                    Text('${_dailyGoal > 0 ? (_dailyEarned * 100 ~/ _dailyGoal) : 0}%',
                         style: AppTextStyles.labelSm(color: AppColors.primary)
                             .copyWith(fontSize: 11, fontWeight: FontWeight.w700)),
                   ],
@@ -264,10 +310,10 @@ class HomeScreen extends StatelessWidget {
           // XP bar
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: _AnimatedXpBar(value: 0.75),
+            child: _AnimatedXpBar(value: _dailyGoal > 0 ? _dailyEarned / _dailyGoal : 0.0),
           ),
           const SizedBox(height: 10),
-          Text('250 XP to complete today\'s goal',
+          Text('${(_dailyGoal - _dailyEarned).clamp(0, _dailyGoal)} XP to complete today\'s goal',
               style: AppTextStyles.labelSm(color: AppColors.onSurfaceVariant)
                   .copyWith(fontSize: 12)),
         ],
@@ -293,24 +339,34 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildContinueLearning(BuildContext context) {
+  Widget _buildContinueLearning() {
+    final courses = _inProgressCourses;
     return SizedBox(
       height: 180,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-        itemCount: _inProgress.length,
-        itemBuilder: (_, i) => Padding(
-          padding: const EdgeInsets.only(right: 14),
-          child: _ContinueCard(
-            course: _inProgress[i],
-            index: i,
-            onTap: () => context.go(AppRoutes.modulePath(1)),
-
-
-          ),
-        ),
+        itemCount: courses.length,
+        itemBuilder: (_, i) {
+          final c = courses[i];
+          final courseId = c['course_id'] as int? ?? 1;
+          return Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: _ContinueCard(
+              course: _CourseData(
+                title: c['title'] as String? ?? '',
+                subtitle: 'Module ${c['current_module'] ?? 1} of ${c['total_modules'] ?? 1}',
+                progress: (c['progress'] as num?)?.toDouble() ?? 0.0,
+                icon: Icons.storage_rounded,
+                color: AppColors.primary,
+                tag: c['tag'] as String? ?? '',
+              ),
+              index: i,
+              onTap: () => context.go(AppRoutes.modulePath(courseId)),
+            ),
+          );
+        },
       ),
     );
   }
@@ -321,8 +377,8 @@ class HomeScreen extends StatelessWidget {
         Expanded(
           child: _MiniStatCard(
             icon: Icons.bolt_rounded,
-            value: '128',
-            label: 'Challenges',
+            value: '$_level',
+            label: 'Level',
             color: AppColors.primary,
           ).staggered(0),
         ),
@@ -330,8 +386,8 @@ class HomeScreen extends StatelessWidget {
         Expanded(
           child: _MiniStatCard(
             icon: Icons.military_tech_rounded,
-            value: '12',
-            label: 'Badges',
+            value: '$_achievementsCount',
+            label: 'Achievements',
             color: AppColors.secondary,
           ).staggered(1),
         ),
@@ -339,7 +395,7 @@ class HomeScreen extends StatelessWidget {
         Expanded(
           child: _MiniStatCard(
             icon: Icons.leaderboard_rounded,
-            value: '#1,402',
+            value: '#$_globalRank',
             label: 'Global Rank',
             color: AppColors.tertiary,
           ).staggered(2),
@@ -347,61 +403,6 @@ class HomeScreen extends StatelessWidget {
       ],
     );
   }
-
-  // ── Data ──────────────────────────────────────────────────────
-  static const _inProgress = [
-    _CourseData(
-      title: 'Backend Engineering',
-      subtitle: 'Module 4 of 12',
-      progress: 0.35,
-      icon: Icons.storage_rounded,
-      color: AppColors.primary,
-      tag: 'Node.js',
-    ),
-    _CourseData(
-      title: 'Rust Fundamentals',
-      subtitle: 'Module 2 of 8',
-      progress: 0.20,
-      icon: Icons.memory_rounded,
-      color: AppColors.tertiary,
-      tag: 'Rust',
-    ),
-    _CourseData(
-      title: 'TypeScript Patterns',
-      subtitle: 'Module 7 of 10',
-      progress: 0.70,
-      icon: Icons.javascript_rounded,
-      color: AppColors.secondary,
-      tag: 'TypeScript',
-    ),
-  ];
-
-  static const _recommended = [
-    _CourseData(
-      title: 'Go for Backend Developers',
-      subtitle: '8 modules • Intermediate',
-      progress: 0,
-      icon: Icons.code_rounded,
-      color: AppColors.primary,
-      tag: 'Go',
-    ),
-    _CourseData(
-      title: 'Docker & Kubernetes',
-      subtitle: '12 modules • Advanced',
-      progress: 0,
-      icon: Icons.cloud_queue_rounded,
-      color: AppColors.secondary,
-      tag: 'DevOps',
-    ),
-    _CourseData(
-      title: 'GraphQL Mastery',
-      subtitle: '6 modules • Intermediate',
-      progress: 0,
-      icon: Icons.hub_rounded,
-      color: AppColors.tertiary,
-      tag: 'API',
-    ),
-  ];
 }
 
 // ── Animated XP bar ───────────────────────────────────────────────────────────

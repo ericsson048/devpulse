@@ -12,6 +12,8 @@ export default function Layout() {
     { to: '/courses', icon: 'pi pi-book', label: 'Courses', end: false },
     { to: '/users', icon: 'pi pi-users', label: 'Users', end: false },
     { to: '/quizzes', icon: 'pi pi-question-circle', label: 'Quizzes', end: false },
+    { to: '/achievements', icon: 'pi pi-star', label: 'Achievements', end: false },
+    { to: '/media', icon: 'pi pi-image', label: 'Media', end: false },
   ];
 
   return (
@@ -38,7 +40,7 @@ export default function Layout() {
 
         <div className="sidebar-footer">
           <div className="user-info">
-            <div className="user-avatar">{user.display_name[0]}</div>
+            <div className="user-avatar">{(user.display_name || '?')[0]}</div>
             <div>
               <div className="user-name">{user.display_name}</div>
               <div className="user-role">{user.role}</div>

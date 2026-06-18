@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from datetime import datetime, timedelta, timezone
+import secrets
 
 from app.database import get_db
 from app.models import User, UserRole
-from app.schemas import LoginRequest, RegisterRequest, TokenResponse, ForgotPasswordRequest
+from app.schemas import LoginRequest, RegisterRequest, TokenResponse, ForgotPasswordRequest, ResetPasswordRequest
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.config import get_settings
 
@@ -48,10 +50,45 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     if not user:
-        # Don't reveal whether email exists
         return {"message": "If that email exists, a reset link has been sent"}
-    # TODO: Send actual email
+    user.reset_token = secrets.token_urlsafe(32)
+    user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+    await db.commit()
+    from app.email_utils import send_reset_email
+    await send_reset_email(user.email, user.reset_token)
     return {"message": "If that email exists, a reset link has been sent"}
+
+
+@router.post("/verify-reset-token")
+async def verify_reset_token(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(User).where(
+            User.reset_token == body.token,
+            User.reset_token_expires > datetime.now(timezone.utc),
+        )
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    return {"valid": True}
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(User).where(
+            User.reset_token == body.token,
+            User.reset_token_expires > datetime.now(timezone.utc),
+        )
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    user.hashed_password = hash_password(body.new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    await db.commit()
+    return {"message": "Password reset successfully"}
 
 
 @router.get("/me", response_model=TokenResponse)
