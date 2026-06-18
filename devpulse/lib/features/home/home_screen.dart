@@ -138,7 +138,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           tag: _recommendedCourses[i]['tag'] as String? ?? '',
                         ) : _CourseData(title: '', subtitle: '', progress: 0, icon: Icons.code_rounded, color: AppColors.primary, tag: ''),
                         index: i,
-                        onTap: () => context.go(AppRoutes.modulePath(1)),
+                        onTap: () {
+                          final cid = _recommendedCourses.length > i ? (_recommendedCourses[i]['id'] as int? ?? 1) : 1;
+                          context.go(AppRoutes.coursePath(cid));
+                        },
                       ),
                     ),
                     childCount: _recommendedCourses.length,
@@ -363,7 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 tag: c['tag'] as String? ?? '',
               ),
               index: i,
-              onTap: () => context.go(AppRoutes.modulePath(courseId)),
+                        onTap: () => context.go(AppRoutes.coursePath(courseId)),
             ),
           );
         },

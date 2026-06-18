@@ -2,16 +2,17 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import type { Course, CourseCreate } from '../types';
-import { DataTable } from 'primereact/datatable';
-import { Column } from 'primereact/column';
-import { Button } from 'primereact/button';
-import { Dialog } from 'primereact/dialog';
-import { InputText } from 'primereact/inputtext';
-import { InputTextarea } from 'primereact/inputtextarea';
-import { InputNumber } from 'primereact/inputnumber';
-import { Dropdown } from 'primereact/dropdown';
-import { ToggleButton } from 'primereact/togglebutton';
-import { Tag } from 'primereact/tag';
+import Table, { type ColumnDef } from '../components/ui/Table';
+import Button from '../components/ui/Button';
+import Dialog from '../components/ui/Dialog';
+import { Input, Textarea } from '../components/ui/Input';
+import InputNumber from '../components/ui/InputNumber';
+import Select from '../components/ui/Select';
+import Toggle from '../components/ui/Toggle';
+import Badge from '../components/ui/Badge';
+import ConfirmDialog, { confirmDialog } from '../components/ui/ConfirmDialog';
+import { useToast } from '../components/Toast';
+import { Plus, Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react';
 
 const LEVELS = [
   { label: 'Beginner', value: 'beginner' },
@@ -23,12 +24,19 @@ const emptyForm: CourseCreate = {
   title: '', description: '', level: 'beginner', language: '', tag: '', icon: '', is_published: false, sort_order: 0, total_xp: 0,
 };
 
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, letterSpacing: '0.3px',
+};
+
 export default function Courses() {
+  const { toast } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [editing, setEditing] = useState<Course | null>(null);
   const [form, setForm] = useState<CourseCreate>({ ...emptyForm });
+  const [saving, setSaving] = useState(false);
+  const [publishingId, setPublishingId] = useState<number | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -54,67 +62,86 @@ export default function Courses() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (editing) await api.updateCourse(editing.id, form);
-    else await api.createCourse(form);
-    setShowDialog(false);
-    load();
+    setSaving(true);
+    try {
+      if (editing) { await api.updateCourse(editing.id, form); toast('Course updated', 'success'); }
+      else { await api.createCourse(form); toast('Course created', 'success'); }
+      setShowDialog(false);
+      load();
+    } catch (e) { toast((e as Error).message, 'error'); }
+    finally { setSaving(false); }
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Delete this course?')) {
-      await api.deleteCourse(id);
-      load();
-    }
+  const handleDelete = (id: number) => {
+    confirmDialog({ message: 'Delete this course?', header: 'Confirm', accept: async () => { try { await api.deleteCourse(id); load(); toast('Course deleted', 'success'); } catch (e) { toast((e as Error).message, 'error'); } } });
   };
 
   const togglePublish = async (c: Course) => {
-    await api.updateCourse(c.id, { is_published: !c.is_published });
-    load();
+    setPublishingId(c.id);
+    try {
+      await api.updateCourse(c.id, { is_published: !c.is_published });
+      load();
+      toast(c.is_published ? 'Course unpublished' : 'Course published', 'success');
+    } catch (e) { toast((e as Error).message, 'error'); }
+    finally { setPublishingId(null); }
   };
 
-  const titleBody = (row: Course) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <Link to={`/courses/${row.id}`} style={{ fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>
-        {row.icon && <span style={{ marginRight: 6 }}>{row.icon}</span>}
-        {row.title}
-      </Link>
-      {row.tag && <Tag value={row.tag} severity="info" rounded style={{ fontSize: 10, padding: '2px 8px' }} />}
-    </div>
-  );
-
-  const levelBody = (row: Course) => {
-    const sev = row.level === 'beginner' ? 'success' : row.level === 'intermediate' ? 'warning' : 'danger';
-    return <Tag value={row.level} severity={sev} rounded />;
-  };
-
-  const statusBody = (row: Course) => (
-    <ToggleButton
-      checked={row.is_published}
-      onChange={() => togglePublish(row)}
-      onLabel="Published"
-      offLabel="Draft"
-      onIcon="pi pi-check-circle"
-      offIcon="pi pi-minus-circle"
-      className="p-button-sm"
-    />
-  );
-
-  const actionsBody = (row: Course) => (
-    <div style={{ display: 'flex', gap: 4 }}>
-      <Button icon="pi pi-pencil" severity="info" text rounded size="small" onClick={() => openEdit(row)} tooltip="Edit" tooltipOptions={{ position: 'top' }} />
-      <Button icon="pi pi-trash" severity="danger" text rounded size="small" onClick={() => handleDelete(row.id)} tooltip="Delete" tooltipOptions={{ position: 'top' }} />
-    </div>
-  );
-
-  const dialogFooter = (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-      <Button label="Cancel" icon="pi pi-times" text onClick={() => setShowDialog(false)} />
-      <Button label={editing ? 'Update' : 'Create'} icon="pi pi-check" onClick={handleSubmit} />
-    </div>
-  );
+  const columns: ColumnDef<Course>[] = [
+    {
+      header: 'Title', sortable: true, sortField: 'title', style: { minWidth: 220 },
+      body: (row) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Link to={`/courses/${row.id}`} style={{ fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>
+            {row.icon && <span style={{ marginRight: 6 }}>{row.icon}</span>}
+            {row.title}
+          </Link>
+          {row.tag && <Badge value={row.tag} severity="info" className="text-[10px] px-1.5 py-0.5" />}
+        </div>
+      ),
+    },
+    {
+      header: 'Level', sortable: true, sortField: 'level', style: { width: 130 },
+      body: (row) => {
+        const sev = row.level === 'beginner' ? 'success' : row.level === 'intermediate' ? 'warning' : 'danger';
+        return <Badge value={row.level} severity={sev} />;
+      },
+    },
+    { header: 'Language', field: 'language', sortable: true, style: { width: 110 } },
+    { header: 'Modules', field: 'total_modules', sortable: true, style: { width: 95 } },
+    { header: 'XP', field: 'total_xp', sortable: true, style: { width: 90 } },
+    {
+      header: 'Status', style: { width: 150 },
+      body: (row) => (
+        <button
+          onClick={() => togglePublish(row)}
+          disabled={publishingId === row.id}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            row.is_published ? 'bg-green-900/40 text-green-300 hover:bg-green-800/50' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+          } ${publishingId === row.id ? 'opacity-50 pointer-events-none' : ''}`}
+        >
+          {row.is_published ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+          {row.is_published ? 'Published' : 'Draft'}
+        </button>
+      ),
+    },
+    {
+      header: 'Actions', style: { width: 100 },
+      body: (row) => (
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 transition-colors" onClick={() => openEdit(row)} title="Edit">
+            <Pencil className="w-4 h-4" />
+          </button>
+          <button className="p-1.5 rounded-md text-gray-400 hover:text-red-400 hover:bg-gray-700 transition-colors" onClick={() => handleDelete(row.id)} title="Delete">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="page fade-in">
+      <ConfirmDialog />
       <div className="page-header">
         <div>
           <h1>Courses</h1>
@@ -122,86 +149,73 @@ export default function Courses() {
             {courses.length} course{courses.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <Button label="Add Course" icon="pi pi-plus" onClick={openCreate} />
+        <Button icon={<Plus className="w-4 h-4" />} onClick={openCreate}>Add Course</Button>
       </div>
 
-      <DataTable
+      <Table
         value={courses}
+        columns={columns}
         loading={loading}
-        stripedRows
+        striped
         paginator
         rows={15}
         emptyMessage="No courses yet — create your first course!"
-        className="p-datatable-sm"
-        sortMode="single"
         sortField="sort_order"
         sortOrder={1}
-      >
-        <Column header="Title" body={titleBody} sortable sortField="title" style={{ minWidth: 220 }} />
-        <Column header="Level" body={levelBody} sortable sortField="level" style={{ width: 130 }} />
-        <Column field="language" header="Language" sortable style={{ width: 110 }} />
-        <Column field="total_modules" header="Modules" sortable style={{ width: 95 }} />
-        <Column field="total_xp" header="XP" sortable style={{ width: 90 }} />
-        <Column header="Status" body={statusBody} style={{ width: 150 }} />
-        <Column header="Actions" body={actionsBody} style={{ width: 100 }} />
-      </DataTable>
+      />
 
       <Dialog
         header={editing ? 'Edit Course' : 'New Course'}
         visible={showDialog}
         onHide={() => setShowDialog(false)}
-        style={{ width: 540 }}
-        footer={dialogFooter}
-        modal
-        draggable={false}
+        width="540px"
+        footer={<><Button variant="ghost" onClick={() => setShowDialog(false)} disabled={saving}>Cancel</Button><Button onClick={handleSubmit} loading={saving}>{editing ? 'Update' : 'Create'}</Button></>}
       >
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 12 }}>
           <div>
             <label style={labelStyle}>Title *</label>
-            <InputText value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="w-full" required />
+            <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
           </div>
           <div>
             <label style={labelStyle}>Description</label>
-            <InputTextarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full" rows={3} />
+            <Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label style={labelStyle}>Level</label>
-              <Dropdown value={form.level} options={LEVELS} onChange={e => setForm({ ...form, level: e.value })} className="w-full" />
+              <Select value={form.level} options={LEVELS} onChange={e => setForm({ ...form, level: e.value })} />
             </div>
             <div>
               <label style={labelStyle}>Language</label>
-              <InputText value={form.language || ''} onChange={e => setForm({ ...form, language: e.target.value })} className="w-full" placeholder="python, dart..." />
+              <Input value={form.language || ''} onChange={e => setForm({ ...form, language: e.target.value })} placeholder="python, dart..." />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label style={labelStyle}>Icon</label>
-              <InputText value={form.icon || ''} onChange={e => setForm({ ...form, icon: e.target.value })} className="w-full" placeholder="emoji or name" />
+              <Input value={form.icon || ''} onChange={e => setForm({ ...form, icon: e.target.value })} placeholder="emoji or name" />
             </div>
             <div>
               <label style={labelStyle}>Tag</label>
-              <InputText value={form.tag || ''} onChange={e => setForm({ ...form, tag: e.target.value })} className="w-full" placeholder="New, Popular..." />
+              <Input value={form.tag || ''} onChange={e => setForm({ ...form, tag: e.target.value })} placeholder="New, Popular..." />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label style={labelStyle}>Total XP</label>
-              <InputNumber value={form.total_xp || 0} onValueChange={e => setForm({ ...form, total_xp: e.value || 0 })} className="w-full" />
+              <InputNumber value={form.total_xp || 0} onValueChange={e => setForm({ ...form, total_xp: e.value || 0 })} />
             </div>
             <div>
               <label style={labelStyle}>Sort Order</label>
-              <InputNumber value={form.sort_order || 0} onValueChange={e => setForm({ ...form, sort_order: e.value || 0 })} className="w-full" />
+              <InputNumber value={form.sort_order || 0} onValueChange={e => setForm({ ...form, sort_order: e.value || 0 })} />
             </div>
           </div>
           <div>
-            <ToggleButton
+            <Toggle
               checked={form.is_published || false}
               onChange={e => setForm({ ...form, is_published: e.value })}
               onLabel="Published"
               offLabel="Draft"
-              onIcon="pi pi-check"
-              offIcon="pi pi-times"
             />
           </div>
         </form>
@@ -209,12 +223,3 @@ export default function Courses() {
     </div>
   );
 }
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 12,
-  fontWeight: 600,
-  color: 'var(--text-secondary)',
-  marginBottom: 6,
-  letterSpacing: '0.3px',
-};

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { DataTable } from 'primereact/datatable';
-import { Column } from 'primereact/column';
-import { Button } from 'primereact/button';
-import { ConfirmDialog, confirmDialog } from 'primereact/confirmdialog';
+import Table, { type ColumnDef } from '../components/ui/Table';
+import Button from '../components/ui/Button';
+import ConfirmDialog, { confirmDialog } from '../components/ui/ConfirmDialog';
+import { useToast } from '../components/Toast';
 import { api } from '../api';
+import { File, Trash2 } from 'lucide-react';
 
 interface MediaItem {
   id: number;
@@ -14,6 +15,7 @@ interface MediaItem {
 }
 
 export default function Media() {
+  const { toast } = useToast();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -27,33 +29,40 @@ export default function Media() {
   useEffect(() => { load(); }, []);
 
   const handleDelete = (id: number) => {
-    confirmDialog({
-      message: 'Delete this file permanently?',
-      header: 'Confirm',
-      icon: 'pi pi-exclamation-triangle',
-      accept: async () => { await api.deleteMedia(id); load(); }
-    });
+    confirmDialog({ message: 'Delete this file permanently?', header: 'Confirm', accept: async () => { try { await api.deleteMedia(id); load(); toast('File deleted', 'success'); } catch (e) { toast((e as Error).message, 'error'); } } });
   };
 
-  const sizeBody = (row: MediaItem) => {
-    if (!row.file_size) return '-';
-    const kb = row.file_size / 1024;
-    return kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(0)} KB`;
-  };
-
-  const previewBody = (row: MediaItem) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      {row.mime_type?.startsWith('image/')
-        ? <img src={row.url} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} />
-        : <i className="pi pi-file" style={{ fontSize: 20, color: 'var(--text-dim)' }} />
-      }
-      <span style={{ fontWeight: 500 }}>{row.filename}</span>
-    </div>
-  );
-
-  const actionsBody = (row: MediaItem) => (
-    <Button icon="pi pi-trash" severity="danger" text rounded size="small" onClick={() => handleDelete(row.id)} />
-  );
+  const columns: ColumnDef<MediaItem>[] = [
+    {
+      header: 'File', style: { minWidth: 240 },
+      body: (row) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {row.mime_type?.startsWith('image/')
+            ? <img src={row.url} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} />
+            : <File className="w-5 h-5 text-gray-500" />
+          }
+          <span style={{ fontWeight: 500 }}>{row.filename}</span>
+        </div>
+      ),
+    },
+    { header: 'Type', field: 'mime_type', style: { width: 150 } },
+    {
+      header: 'Size', style: { width: 100 },
+      body: (row) => {
+        if (!row.file_size) return '-';
+        const kb = row.file_size / 1024;
+        return kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(0)} KB`;
+      },
+    },
+    {
+      header: 'Actions', style: { width: 80 },
+      body: (row) => (
+        <button className="p-1.5 rounded-md text-gray-400 hover:text-red-400 hover:bg-gray-700 transition-colors" onClick={() => handleDelete(row.id)} title="Delete">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      ),
+    },
+  ];
 
   return (
     <div className="page fade-in">
@@ -67,14 +76,8 @@ export default function Media() {
         </div>
       </div>
 
-      <DataTable value={items} loading={loading} stripedRows paginator rows={20}
-        emptyMessage="No media files uploaded yet."
-        className="p-datatable-sm" dataKey="id">
-        <Column header="File" body={previewBody} style={{ minWidth: 240 }} />
-        <Column header="Type" field="mime_type" style={{ width: 150 }} />
-        <Column header="Size" body={sizeBody} style={{ width: 100 }} />
-        <Column header="Actions" body={actionsBody} style={{ width: 80 }} />
-      </DataTable>
+      <Table value={items} columns={columns} loading={loading} striped paginator rows={20}
+        emptyMessage="No media files uploaded yet." dataKey="id" />
     </div>
   );
 }

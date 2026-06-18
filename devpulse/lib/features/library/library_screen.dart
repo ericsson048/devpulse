@@ -190,7 +190,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
               index: i,
               enrolling: _enrolling.contains(id),
-              onTap: () => context.go(AppRoutes.modulePath(id)),
+              onTap: () => context.go(AppRoutes.coursePath(id)),
               onEnroll: enrolled ? null : () => _handleEnroll(id),
             ),
           );

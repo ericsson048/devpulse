@@ -6,6 +6,7 @@ import '../../features/auth/auth_screen.dart';
 import '../../features/auth/forgot_password_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/library/library_screen.dart';
+import '../../features/course/course_detail_screen.dart';
 import '../../features/module/module_screen.dart';
 import '../../features/lesson/lesson_screen.dart';
 import '../../features/quiz/quiz_screen.dart';
@@ -28,6 +29,7 @@ class AppRoutes {
   // ── Shell (bottom nav) ────────────────────────────────────────
   static const home            = '/app/home';
   static const library         = '/app/library';
+  static const course          = '/app/course/:courseId';
   static const module          = '/app/module/:moduleId';
   static const lesson          = '/app/lesson/:lessonId';
   static const quiz            = '/app/quiz';
@@ -37,6 +39,7 @@ class AppRoutes {
   static const settings        = '/app/settings';
 
   /// Helper to build module route path
+  static String coursePath(int courseId) => '/app/course/$courseId';
   static String modulePath(int moduleId) => '/app/module/$moduleId';
   /// Helper to build lesson route path
   static String lessonPath(int lessonId) => '/app/lesson/$lessonId';
@@ -77,6 +80,13 @@ final appRouter = GoRouter(
         GoRoute(
           path: AppRoutes.library,
           builder: (_, __) => const LibraryScreen(),
+        ),
+        GoRoute(
+          path: '/app/course/:courseId',
+          builder: (_, state) {
+            final id = int.parse(state.pathParameters['courseId']!);
+            return CourseDetailScreen(courseId: id);
+          },
         ),
         GoRoute(
           path: '/app/module/:moduleId',

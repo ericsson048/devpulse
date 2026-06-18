@@ -63,7 +63,10 @@ class ApiService {
     final response = await request.close();
     final responseBody = await response.transform(utf8.decoder).join();
     if (response.statusCode >= 400) {
-      throw HttpException('$method $path -> ${response.statusCode}: $responseBody');
+      String detail;
+      try { final json = jsonDecode(responseBody); detail = json['detail'] ?? responseBody; }
+      catch (_) { detail = responseBody; }
+      throw HttpException(detail);
     }
     if (responseBody.isEmpty) return null;
     return jsonDecode(responseBody);
@@ -160,6 +163,11 @@ class ApiService {
   }
 
   // ── Modules ────────────────────────────────────────────────────
+  static Future<Map<String, dynamic>> getCourse(int courseId) async {
+    final data = await _get('/api/courses/$courseId');
+    return data as Map<String, dynamic>;
+  }
+
   static Future<List<dynamic>> getModules(int courseId) async {
     final data = await _get('/api/courses/$courseId/modules');
     return data as List<dynamic>;

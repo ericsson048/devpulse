@@ -1,10 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { InputText } from 'primereact/inputtext';
-import { Password } from 'primereact/password';
-import { Button } from 'primereact/button';
-import { Message } from 'primereact/message';
+import { Input } from '../components/ui/Input';
+import Button from '../components/ui/Button';
+import { Zap, LogIn, AlertCircle } from 'lucide-react';
 
 export default function Login() {
   const { user, login, loading } = useAuth();
@@ -35,7 +34,7 @@ export default function Login() {
             margin: '0 auto',
             boxShadow: '0 8px 24px rgba(124,92,252,0.3)',
           }}>
-            <i className="pi pi-bolt" style={{ fontSize: 28, color: '#fff' }} />
+            <Zap className="w-7 h-7 text-white" />
           </div>
           <h1>DevPulse Admin</h1>
           <p>Sign in to manage your platform</p>
@@ -43,19 +42,21 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {error && (
-            <Message severity="error" text={error} style={{ width: '100%' }} />
+            <div className="flex items-center gap-2 p-3 rounded-md bg-red-900/30 border border-red-800 text-red-300 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
           )}
 
           <div>
             <label htmlFor="email" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, letterSpacing: '0.3px' }}>
               USERNAME
             </label>
-            <InputText
+            <Input
               id="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="admin"
-              className="w-full"
               required
             />
           </div>
@@ -64,28 +65,25 @@ export default function Login() {
             <label htmlFor="password" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, letterSpacing: '0.3px' }}>
               PASSWORD
             </label>
-            <Password
+            <Input
               id="password"
+              type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
-              feedback={false}
-              toggleMask
-              className="w-full"
-              inputClassName="w-full"
               required
             />
           </div>
 
           <Button
             type="submit"
-            label={loading ? 'Signing in...' : 'Sign in'}
-            icon="pi pi-sign-in"
             loading={loading}
-            className="w-full"
-            size="large"
+            size="lg"
+            icon={<LogIn className="w-4 h-4" />}
             style={{ marginTop: 8 }}
-          />
+          >
+            {loading ? 'Signing in...' : 'Sign in'}
+          </Button>
         </form>
       </div>
     </div>

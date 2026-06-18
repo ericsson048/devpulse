@@ -4,7 +4,7 @@ from sqlalchemy import select, func, delete
 
 from app.database import get_db
 from app.models import Course, CourseLevel, Module, UserProgress, User
-from app.schemas import CourseCreate, CourseUpdate, CourseOut, CourseWithProgress, PaginatedResponse
+from app.schemas import CourseCreate, CourseUpdate, CourseOut, CourseWithProgress, ModuleOut, PaginatedResponse
 from app.auth import get_current_user, get_admin_user
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
@@ -154,9 +154,8 @@ async def unenroll_course(
     return {"ok": True}
 
 
-@router.get("/{course_id}/modules", response_model=list)
+@router.get("/{course_id}/modules", response_model=list[ModuleOut])
 async def get_course_modules(course_id: int, db: AsyncSession = Depends(get_db)):
-    from app.schemas import ModuleOut
     result = await db.execute(
         select(Module)
         .where(Module.course_id == course_id)
