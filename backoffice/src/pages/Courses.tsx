@@ -92,7 +92,7 @@ export default function Courses() {
       body: (row) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Link to={`/courses/${row.id}`} style={{ fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>
-            {row.icon && <span style={{ marginRight: 6 }}>{row.icon}</span>}
+            {/* {row.icon && <span style={{ marginRight: 6 }}>{row.icon}</span>} */}
             {row.title}
           </Link>
           {row.tag && <Badge value={row.tag} severity="info" className="text-[10px] px-1.5 py-0.5" />}
