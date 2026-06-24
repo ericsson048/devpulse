@@ -17,6 +17,7 @@ dependencies:
   shimmer: ^3.0.0
   shared_preferences: ^2.5.5
   video_player: ^2.10.1
+  youtube_player_flutter: ^10.0.1
   url_launcher: ^6.3.2
   webview_flutter: ^4.14.0
   flutter_local_notifications: 22.0.1
