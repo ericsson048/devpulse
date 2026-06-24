@@ -14,6 +14,8 @@ import '../../features/quiz/quiz_result_screen.dart';
 import '../../features/editor/editor_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../features/notifications/notifications_screen.dart';
+import '../../features/badges/badges_screen.dart';
 import '../../features/shell/app_shell.dart';
 
 /// Named route paths — single source of truth for the whole app.
@@ -37,6 +39,8 @@ class AppRoutes {
   static const editor          = '/app/editor';
   static const profile         = '/app/profile';
   static const settings        = '/app/settings';
+  static const notifications    = '/app/notifications';
+  static const badges            = '/app/badges';
 
   /// Helper to build module route path
   static String coursePath(int courseId) => '/app/course/$courseId';
@@ -117,10 +121,21 @@ final appRouter = GoRouter(
           path: AppRoutes.quizResult,
           builder: (_, state) {
             final score = int.tryParse(
-                    state.uri.queryParameters['score'] ?? '7') ?? 7;
+                    state.uri.queryParameters['score'] ?? '') ?? 7;
             final total = int.tryParse(
-                    state.uri.queryParameters['total'] ?? '10') ?? 10;
-            return QuizResultScreen(score: score, total: total);
+                    state.uri.queryParameters['total'] ?? '') ?? 10;
+            final xpEarned = int.tryParse(
+                    state.uri.queryParameters['xp_earned'] ?? '') ?? 0;
+            final timeTaken = int.tryParse(
+                    state.uri.queryParameters['time_taken'] ?? '') ?? 0;
+            final quizTitle = state.uri.queryParameters['quiz_title'] ?? 'Quiz';
+            return QuizResultScreen(
+              score: score,
+              total: total,
+              xpEarned: xpEarned,
+              timeTaken: timeTaken,
+              quizTitle: quizTitle,
+            );
           },
         ),
         GoRoute(
@@ -130,6 +145,14 @@ final appRouter = GoRouter(
         GoRoute(
           path: AppRoutes.profile,
           builder: (_, __) => const ProfileScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.notifications,
+          builder: (_, __) => const NotificationsScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.badges,
+          builder: (_, __) => const BadgesScreen(),
         ),
         GoRoute(
           path: AppRoutes.settings,

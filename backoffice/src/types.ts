@@ -153,3 +153,23 @@ export interface MediaItem {
   mime_type: string;
   file_size: number;
 }
+
+export interface WeeklyDataPoint {
+  week: string;
+  count: number;
+}
+
+export interface CourseProgressStat {
+  course: string;
+  completed: number;
+  in_progress: number;
+  not_started: number;
+}
+
+export interface AdminDashboardCharts {
+  weekly_registrations: WeeklyDataPoint[];
+  weekly_quiz_attempts: WeeklyDataPoint[];
+  quiz_grades: Record<string, number>;
+  level_distribution: { level: number; count: number }[];
+  course_progress: CourseProgressStat[];
+}

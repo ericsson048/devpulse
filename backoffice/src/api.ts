@@ -1,7 +1,7 @@
 import type {
   TokenResponse, User, Course, CourseCreate, Module, ModuleCreate,
   Lesson, LessonCreate, Quiz, BackofficeDashboard, Achievement,
-  MediaItem
+  MediaItem, AdminDashboardCharts
 } from './types';
 
 const API_BASE = 'http://localhost:8000/api';
@@ -42,6 +42,7 @@ export const api = {
 
   // Dashboard
   getDashboard: () => request<BackofficeDashboard>('/progress/admin/dashboard'),
+  getDashboardCharts: () => request<AdminDashboardCharts>('/progress/admin/dashboard/charts'),
 
   // Users
   getUsers: (skip = 0, limit = 50) =>
@@ -98,6 +99,21 @@ export const api = {
 
   // Media
   listMedia: () => request<MediaItem[]>('/media/'),
+  uploadMedia: async (file: File) => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/media/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    return res.json() as Promise<MediaItem>;
+  },
   deleteMedia: (id: number) =>
     request<{ ok: boolean }>(`/media/${id}`, { method: 'DELETE' }),
 };

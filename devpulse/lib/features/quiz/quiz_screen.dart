@@ -144,8 +144,14 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       final result = await ApiService.submitQuiz(quizId, answers);
       final score = result['score'] as int? ?? _correctCount;
       final total = result['total'] as int? ?? _questions.length;
+      final xpEarned = result['xp_earned'] as int? ?? 0;
+      final quizTitle = _quiz?['title'] as String? ?? 'Quiz';
+      final timeLimit = _quiz?['time_limit_seconds'] as int? ?? 0;
+      final timeTaken = timeLimit - _timeLeft;
       if (mounted) {
-        context.go('/app/quiz-result?score=$score&total=$total');
+        context.go(
+          '/app/quiz-result?score=$score&total=$total&xp_earned=$xpEarned&quiz_title=${Uri.encodeComponent(quizTitle)}&time_taken=$timeTaken',
+        );
       }
     } catch (_) {
       _navigateToResult();
@@ -154,8 +160,11 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   void _navigateToResult() {
     final total = _questions.length;
+    final quizTitle = _quiz?['title'] as String? ?? 'Quiz';
     if (mounted) {
-      context.go('/app/quiz-result?score=$_correctCount&total=$total');
+      context.go(
+        '/app/quiz-result?score=$_correctCount&total=$total&quiz_title=${Uri.encodeComponent(quizTitle)}',
+      );
     }
   }
 

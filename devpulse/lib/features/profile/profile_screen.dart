@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/widgets.dart';
 import '../../core/utils/app_animations.dart';
 import '../../core/services/api_service.dart';
 import '../../core/utils/toast.dart';
+import '../../core/router/app_router.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -22,6 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   String? _error;
   bool _editingName = false;
   final _nameCtrl = TextEditingController();
+  final Map<int, String> _courseTitles = {};
 
   late final AnimationController _xpCtrl;
   late final Animation<double> _xpAnim;
@@ -48,6 +51,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           _loading = false;
         });
         _initXpAnim();
+        _loadCourseTitles();
       }
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
@@ -57,7 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   void _initXpAnim() {
     _xpCtrl = AnimationController(vsync: this, duration: 1500.ms);
     final xp = (_user?['xp'] as int? ?? 0).toDouble();
-    final next = (_user?['xp_next_level'] as int? ?? 10000).toDouble();
+    final next = (_user?['xp_next_level'] as int? ?? _level * 1000).toDouble();
     final ratio = next > 0 ? (xp / next).clamp(0.0, 1.0) : 0.0;
     _xpAnim = Tween<double>(begin: 0, end: ratio).animate(
       CurvedAnimation(parent: _xpCtrl, curve: Curves.easeOutCubic),
@@ -67,10 +71,28 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
   }
 
+  Future<void> _loadCourseTitles() async {
+    final ids = _progress
+        .map((p) => (p as Map)['course_id'] as int?)
+        .whereType<int>()
+        .toSet();
+    if (ids.isEmpty) return;
+    try {
+      final data = await ApiService.getCoursesPaginated(limit: 200);
+      final items = (data['items'] as List<dynamic>?) ?? <dynamic>[];
+      for (final c in items) {
+        final cid = (c as Map)['id'] as int?;
+        final title = c['title'] as String?;
+        if (cid != null && title != null) _courseTitles[cid] = title;
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
+  }
+
   String get _displayName => _user?['display_name'] as String? ?? 'Developer';
   int get _level => _user?['level'] as int? ?? 1;
   int get _xp => _user?['xp'] as int? ?? 0;
-  int get _xpNext => (_user?['xp_next_level'] as int? ?? 10000);
+  int get _xpNext => (_user?['xp_next_level'] as int?) ?? (_level * 1000);
   int get _streak => _user?['streak'] as int? ?? 0;
   String get _role => _user?['role'] as String? ?? 'Learner';
 
@@ -384,7 +406,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
-                  onPressed: () {},
+                  onPressed: () => context.push(AppRoutes.badges),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
                         color: AppColors.outlineVariant.withValues(alpha: 0.4)),
@@ -461,7 +483,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     return _CourseItem(
       icon: Icons.circle_rounded,
       iconColor: completed ? AppColors.secondary : AppColors.primary,
-      title: 'Course #${pm['course_id'] ?? 0}',
+      title: _courseTitles[pm['course_id']] ?? 'Course',
       subtitle: completed
           ? 'Completed'
           : 'In Progress • ${(pct * 100).toInt()}%',

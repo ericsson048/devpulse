@@ -188,11 +188,12 @@ class ApiService {
     return data as Map<String, dynamic>;
   }
 
-  static Future<void> completeLesson(int lessonId) async {
-    await _post('/api/progress/lesson', {
+  static Future<Map<String, dynamic>> completeLesson(int lessonId) async {
+    final data = await _post('/api/progress/lesson', {
       'lesson_id': lessonId,
       'status': 'completed',
     });
+    return data as Map<String, dynamic>;
   }
 
   // ── Profile ────────────────────────────────────────────────────

@@ -4,10 +4,11 @@ import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.auth import get_admin_user
 from app.models import User
+from app.services.b2_service import B2Service
 
 # ── Config ────────────────────────────────────────────────────────
 MEDIA_ROOT = Path(__file__).resolve().parent.parent / "Medias"
@@ -23,7 +24,6 @@ ALLOWED_TYPES = {
     },
 }
 
-# sub-folder per media type
 SUBFOLDERS = {
     "video": "videos",
     "image": "images",
@@ -31,16 +31,15 @@ SUBFOLDERS = {
 }
 
 MAX_SIZES = {
-    "video":    200 * 1024 * 1024,   # 200 MB
-    "image":    10  * 1024 * 1024,   # 10 MB
-    "resource": 50  * 1024 * 1024,   # 50 MB
+    "video":    200 * 1024 * 1024,
+    "image":    10  * 1024 * 1024,
+    "resource": 50  * 1024 * 1024,
 }
 
 router = APIRouter(prefix="/media", tags=["Media"])
 
 
 def _media_type(mime: str) -> str | None:
-    """Return category key (video / image / resource) or None if not allowed."""
     for category, mimes in ALLOWED_TYPES.items():
         if mime in mimes:
             return category
@@ -48,11 +47,9 @@ def _media_type(mime: str) -> str | None:
 
 
 def _safe_ext(filename: str, mime: str) -> str:
-    """Return a safe file extension from the original name or mime type."""
     ext = Path(filename).suffix.lower()
     if not ext:
         ext = mimetypes.guess_extension(mime) or ""
-    # guard against path traversal
     ext = ext.replace("/", "").replace("\\", "")
     return ext[:10]
 
@@ -63,10 +60,6 @@ async def upload_media(
     file: UploadFile = File(...),
     admin: User = Depends(get_admin_user),
 ):
-    """
-    Upload a media file (video, image, or resource/PDF).
-    Returns the public URL path that can be stored in the DB.
-    """
     mime = file.content_type or ""
     category = _media_type(mime)
     if not category:
@@ -77,7 +70,6 @@ async def upload_media(
                    f"resources (pdf/zip/txt).",
         )
 
-    # Read and check size
     content = await file.read()
     if len(content) > MAX_SIZES[category]:
         max_mb = MAX_SIZES[category] // (1024 * 1024)
@@ -86,16 +78,20 @@ async def upload_media(
             detail=f"File too large. Maximum size for {category} is {max_mb} MB.",
         )
 
-    # Build unique filename
     ext = _safe_ext(file.filename or "", mime)
     unique_name = f"{uuid.uuid4().hex}{ext}"
     subfolder = SUBFOLDERS[category]
+    b2_key = f"{subfolder}/{unique_name}"
+
+    # Upload to B2
+    ok = B2Service.upload_fileobj(content, b2_key)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to upload file to storage")
+
+    # Also save locally as fallback
     dest_dir = MEDIA_ROOT / subfolder
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / unique_name
-
-    # Write to disk
-    with open(dest_path, "wb") as f:
+    with open(dest_dir / unique_name, "wb") as f:
         f.write(content)
 
     public_url = f"/api/media/{subfolder}/{unique_name}"
@@ -113,11 +109,6 @@ async def upload_media(
 # ── Serve static media ────────────────────────────────────────────
 @router.get("/{subfolder}/{filename}")
 async def serve_media(subfolder: str, filename: str):
-    """
-    Serve a media file by its path.
-    No authentication required — URLs are unguessable (UUID-based).
-    """
-    # Prevent path traversal
     if ".." in subfolder or ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid path")
 
@@ -125,15 +116,21 @@ async def serve_media(subfolder: str, filename: str):
     if subfolder not in allowed_subfolders:
         raise HTTPException(status_code=404, detail="Not found")
 
-    file_path = MEDIA_ROOT / subfolder / filename
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Media not found")
+    # Try local disk first (backward compat)
+    local_path = MEDIA_ROOT / subfolder / filename
+    if local_path.exists() and local_path.is_file():
+        return FileResponse(
+            path=str(local_path),
+            filename=filename,
+            media_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        )
 
-    return FileResponse(
-        path=str(file_path),
-        filename=filename,
-        media_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
-    )
+    # Fallback to B2 redirect
+    b2_key = f"{subfolder}/{filename}"
+    if B2Service.file_exists(b2_key):
+        return RedirectResponse(url=B2Service.public_url(b2_key))
+
+    raise HTTPException(status_code=404, detail="Media not found")
 
 
 # ── List media (admin only) ───────────────────────────────────────
@@ -142,7 +139,6 @@ async def list_media(
     media_type: str = Query("all", description="Filter: video | image | resource | all"),
     admin: User = Depends(get_admin_user),
 ):
-    """List all uploaded media files (admin only)."""
     results = []
 
     folders_to_scan: list[tuple[str, str]] = []
@@ -157,6 +153,7 @@ async def list_media(
     else:
         raise HTTPException(status_code=400, detail="Invalid media_type")
 
+    # List local files
     for category, subfolder in folders_to_scan:
         folder = MEDIA_ROOT / subfolder
         if not folder.exists():
@@ -171,6 +168,22 @@ async def list_media(
                     "mime": mimetypes.guess_type(f.name)[0] or "application/octet-stream",
                 })
 
+    # List B2 files (merge, avoid dupes)
+    seen = {r["filename"] for r in results}
+    for category, subfolder in folders_to_scan:
+        for obj in B2Service.list_files(prefix=f"{subfolder}/"):
+            fname = obj["key"].split("/")[-1]
+            if fname in seen:
+                continue
+            seen.add(fname)
+            results.append({
+                "url": f"/api/media/{subfolder}/{fname}",
+                "filename": fname,
+                "type": category,
+                "size_bytes": obj["size_bytes"],
+                "mime": mimetypes.guess_type(fname)[0] or "application/octet-stream",
+            })
+
     return results
 
 
@@ -181,7 +194,6 @@ async def delete_media(
     filename: str,
     admin: User = Depends(get_admin_user),
 ):
-    """Delete a media file."""
     if ".." in subfolder or ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid path")
 
@@ -189,9 +201,13 @@ async def delete_media(
     if subfolder not in allowed_subfolders:
         raise HTTPException(status_code=404, detail="Not found")
 
-    file_path = MEDIA_ROOT / subfolder / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Media not found")
+    # Delete from local disk
+    local_path = MEDIA_ROOT / subfolder / filename
+    if local_path.exists():
+        os.remove(local_path)
 
-    os.remove(file_path)
+    # Delete from B2
+    b2_key = f"{subfolder}/{filename}"
+    B2Service.delete_file(b2_key)
+
     return {"ok": True, "deleted": filename}

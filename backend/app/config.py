@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     SMTP_FROM: str = "noreply@devpulse.io"
     APP_URL: str = "http://localhost:5173"
 
+    # Backblaze B2
+    B2_ENDPOINT: str = ""
+    B2_KEY_ID: str = ""
+    B2_APPLICATION_KEY: str = ""
+    B2_BUCKET_NAME: str = ""
+
     @property
     def async_database_url(self) -> str:
         # asyncpg uses 'ssl' instead of 'sslmode'

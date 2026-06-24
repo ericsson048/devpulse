@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Table, { type ColumnDef } from '../components/ui/Table';
 import Button from '../components/ui/Button';
 import ConfirmDialog, { confirmDialog } from '../components/ui/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { api } from '../api';
-import { File, Trash2 } from 'lucide-react';
+import { File, Trash2, Upload } from 'lucide-react';
 
 interface MediaItem {
   id: number;
@@ -18,6 +18,8 @@ export default function Media() {
   const { toast } = useToast();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     setLoading(true);
@@ -27,6 +29,22 @@ export default function Media() {
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      await api.uploadMedia(file);
+      toast('File uploaded', 'success');
+      load();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleDelete = (id: number) => {
     confirmDialog({ message: 'Delete this file permanently?', header: 'Confirm', accept: async () => { try { await api.deleteMedia(id); load(); toast('File deleted', 'success'); } catch (e) { toast((e as Error).message, 'error'); } } });
@@ -74,6 +92,15 @@ export default function Media() {
             {items.length} file{items.length !== 1 ? 's' : ''}
           </p>
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={handleUpload}
+          style={{ display: 'none' }}
+        />
+        <Button onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+          {uploading ? 'Uploading...' : <><Upload className="w-4 h-4" /> Upload</>}
+        </Button>
       </div>
 
       <Table value={items} columns={columns} loading={loading} striped paginator rows={20}

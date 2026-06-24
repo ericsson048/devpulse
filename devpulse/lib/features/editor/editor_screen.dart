@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_animations.dart';
+import '../../core/services/api_service.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({super.key});
@@ -16,6 +17,7 @@ class _EditorScreenState extends State<EditorScreen>
   int _selectedLang = 0;
   bool _running = false;
   bool _hasOutput = false;
+  String _output = '';
   final _codeCtrl = TextEditingController();
   late final AnimationController _runCtrl =
       AnimationController(vsync: this, duration: 1500.ms);
@@ -89,15 +91,6 @@ const sum: number = numbers.reduce((a, b) => a + b, 0);
 console.log(\`Sum: \${sum}\`);''',
   };
 
-  static const _outputs = {
-    'Rust': 'Hello, DevPulse!\nSum: 15\n\nProcess finished with exit code 0',
-    'Go': 'Hello, DevPulse!\nSum: 15\n\nProcess finished with exit code 0',
-    'Python': 'Hello, DevPulse!\nSum: 15\n\nProcess finished with exit code 0',
-    'Node.js': 'Hello, DevPulse!\nSum: 15\n\nProcess finished with exit code 0',
-    'TypeScript':
-        'Hello, DevPulse!\nSum: 15\n\nProcess finished with exit code 0',
-  };
-
   @override
   void initState() {
     super.initState();
@@ -112,10 +105,52 @@ console.log(\`Sum: \${sum}\`);''',
   }
 
   Future<void> _run() async {
-    setState(() { _running = true; _hasOutput = false; });
+    setState(() { _running = true; _hasOutput = false; _output = ''; });
     _runCtrl.forward(from: 0);
-    await Future.delayed(1600.ms);
-    if (mounted) setState(() { _running = false; _hasOutput = true; });
+
+    final lang = _langs[_selectedLang];
+    if (lang != 'Python') {
+      await Future.delayed(800.ms);
+      if (mounted) {
+        setState(() {
+          _output = 'Only Python is supported in the sandbox.\nPlease switch to Python to run code.';
+          _running = false;
+          _hasOutput = true;
+        });
+      }
+      return;
+    }
+
+    try {
+      final result = await ApiService.executeCode('python', _codeCtrl.text);
+      if (!mounted) return;
+      final stdout = result['stdout'] as String? ?? '';
+      final stderr = result['stderr'] as String? ?? '';
+      final exitCode = result['exit_code'] as int? ?? 0;
+      final error = result['error'] as String?;
+      final buf = StringBuffer();
+      if (stdout.isNotEmpty) buf.write(stdout);
+      if (stderr.isNotEmpty) {
+        if (buf.isNotEmpty) buf.writeln();
+        buf.write('STDERR:\n$stderr');
+      }
+      if (error != null) {
+        if (buf.isNotEmpty) buf.writeln();
+        buf.write('ERROR: $error');
+      }
+      if (exitCode != 0 && buf.isEmpty) {
+        buf.write('Process finished with exit code $exitCode');
+      }
+      if (buf.isEmpty) buf.write('(no output)');
+      setState(() { _output = buf.toString(); _running = false; _hasOutput = true; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _output = 'Error connecting to sandbox:\n$e';
+        _running = false;
+        _hasOutput = true;
+      });
+    }
   }
 
   void _selectLang(int i) {
@@ -458,7 +493,7 @@ console.log(\`Sum: \${sum}\`);''',
                 : SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                      _outputs[lang] ?? '',
+                      _output,
                       style: AppTextStyles.codeBlock(color: AppColors.secondary)
                           .copyWith(fontSize: 13, height: 1.7),
                     ).animate().fadeIn(duration: 400.ms),

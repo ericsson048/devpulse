@@ -12,4 +12,5 @@ __all__ = [
     "UserProgressOut", "ProgressUpdateRequest",
     "AchievementOut", "UserAchievementOut",
     "HomeDashboard", "BackofficeDashboard",
+    "WeeklyDataPoint", "CourseProgressStat", "AdminDashboardCharts",
 ]

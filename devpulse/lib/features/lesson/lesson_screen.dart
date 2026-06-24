@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/widgets.dart';
@@ -11,6 +13,7 @@ import '../../core/widgets/dp_markdown.dart';
 import '../../core/utils/app_animations.dart';
 import '../../core/utils/app_config.dart';
 import '../../core/services/api_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/utils/toast.dart';
 import '../../core/router/app_router.dart';
 
@@ -27,6 +30,7 @@ class LessonData {
   final String? codeLanguage;
   final bool hasEditor;
   final int xpReward;
+  final int? quizId;
 
   const LessonData({
     required this.id,
@@ -40,6 +44,7 @@ class LessonData {
     this.codeLanguage,
     this.hasEditor = false,
     required this.xpReward,
+    this.quizId,
   });
 
   factory LessonData.fromJson(Map<String, dynamic> j) {
@@ -62,6 +67,7 @@ class LessonData {
       codeLanguage: j['code_language'] as String?,
       hasEditor: j['has_editor'] as bool? ?? false,
       xpReward: j['xp_reward'] as int? ?? 25,
+      quizId: j['quiz_id'] as int?,
     );
   }
 }
@@ -101,6 +107,20 @@ class _LessonScreenState extends State<LessonScreen>
   bool _loading = true;
   String? _error;
 
+  // User progress
+  int _xp = 0;
+  int _xpNextLevel = 1000;
+  int _level = 1;
+  bool _xpAnimated = false;
+
+  // Module/course progress
+  int _moduleTotalLessons = 0;
+  int _moduleCompletedLessons = 0;
+  int _courseTotalLessons = 0;
+  int _courseCompletedLessons = 0;
+  int _courseTotalModules = 0;
+  int _courseCompletedModules = 0;
+
   // Video player state
   VideoPlayerController? _videoCtrl;
   bool _videoInitialized = false;
@@ -133,11 +153,59 @@ class _LessonScreenState extends State<LessonScreen>
     }
     setState(() { _loading = true; _error = null; });
     try {
-      final data = await ApiService.getLesson(widget.lessonId!);
+      final lessonData = ApiService.getLesson(widget.lessonId!);
+      final profileData = ApiService.getUserProfile();
+      final progressData = ApiService.getUserProgress();
+      final lesson = LessonData.fromJson(await lessonData);
       if (!mounted) return;
-      final lesson = LessonData.fromJson(data);
+      final moduleFuture = ApiService.getModule(lesson.moduleId);
+      final profile = await profileData;
+      final progress = await progressData;
+      final module = await moduleFuture;
+      if (!mounted) return;
+      final moduleId = lesson.moduleId;
+      final courseId = module['course_id'] as int?;
+      final modulesFut = courseId != null ? ApiService.getModules(courseId) : null;
+      final course = courseId != null ? await ApiService.getCourse(courseId) : null;
+      final modules = modulesFut != null ? await modulesFut : <dynamic>[];
+      if (!mounted) return;
+      final courseXp = course?['total_xp'] as int?;
+
+      final completed = progress
+          .any((p) => p is Map && p['lesson_id'] == widget.lessonId && p['status'] == 'completed');
+
+      int modTotal = module['total_lessons'] as int? ?? 0;
+      final modCompleted = progress
+          .where((p) => p is Map && p['module_id'] == moduleId && p['status'] == 'completed')
+          .length;
+
+      int courseTotalLessons = 0;
+      int courseCompletedModules = 0;
+      for (final m in modules) {
+        final mtl = (m as Map)['total_lessons'] as int? ?? 0;
+        courseTotalLessons += mtl;
+        final mId = m['id'] as int;
+        final mc = progress
+            .where((p) => p is Map && p['module_id'] == mId && p['status'] == 'completed')
+            .length;
+        if (mc >= mtl) courseCompletedModules++;
+      }
+      final courseCompletedLessons = progress
+          .where((p) => p is Map && p['course_id'] == courseId && p['status'] == 'completed')
+          .length;
+
       setState(() {
         _lesson = lesson;
+        _completed = completed;
+        _xp = profile['xp'] as int? ?? 0;
+        _xpNextLevel = profile['xp_next_level'] as int? ?? courseXp ?? 1000;
+        _level = profile['level'] as int? ?? 1;
+        _moduleTotalLessons = modTotal;
+        _moduleCompletedLessons = modCompleted;
+        _courseTotalLessons = courseTotalLessons;
+        _courseCompletedLessons = courseCompletedLessons;
+        _courseTotalModules = modules.length;
+        _courseCompletedModules = courseCompletedModules;
         _loading = false;
       });
       _codeCtrl.text = lesson.codeTemplate ?? '';
@@ -326,57 +394,23 @@ class _LessonScreenState extends State<LessonScreen>
     final isYoutube = uri != null && (uri.host.contains('youtube') || uri.host.contains('youtu.be'));
 
     if (isYoutube) {
-      return Container(
-        height: 200,
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.outlineVariant),
-        ),
-        child: Stack(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.primaryContainer.withValues(alpha: 0.2),
-                    AppColors.surfaceContainerHighest,
-                  ],
-                ),
-              ),
-            ),
-            Center(
-              child: Container(
-                width: 64, height: 64,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.4), blurRadius: 20)],
-                ),
-                child: const Icon(Icons.play_arrow, color: AppColors.onPrimary, size: 32),
-              ),
-            ),
-            Positioned(
-              bottom: 12, left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(6)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.ondemand_video, color: Colors.white70, size: 13),
-                    const SizedBox(width: 6),
-                    Text('Watch video', style: AppTextStyles.labelSm(color: Colors.white70).copyWith(fontSize: 11)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
+      final videoId = _extractYoutubeId(uri);
+      if (videoId != null) {
+        return Container(
+          height: 220,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: WebViewWidget(
+            controller: WebViewController()
+              ..setJavaScriptMode(JavaScriptMode.unrestricted)
+              ..loadRequest(Uri.parse('https://www.youtube.com/embed/$videoId?autoplay=0&rel=0'))
+              ..setBackgroundColor(Colors.black),
+          ),
+        );
+      }
     }
 
     if (_videoCtrl != null && _videoInitialized) {
@@ -427,6 +461,18 @@ class _LessonScreenState extends State<LessonScreen>
     }
 
     return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+  }
+
+  String? _extractYoutubeId(Uri uri) {
+    if (uri.host.contains('youtu.be')) {
+      return uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+    }
+    final vid = uri.queryParameters['v'];
+    if (vid != null && vid.isNotEmpty) return vid;
+    if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'embed') {
+      return uri.pathSegments[1];
+    }
+    return null;
   }
 
   // ── Markdown Content ──────────────────────────────────────────
@@ -795,8 +841,14 @@ class _LessonScreenState extends State<LessonScreen>
   // ── Completion ────────────────────────────────────────────────
   Widget _buildCompletion(BuildContext context) {
     final l = _lesson!;
+    final xpRatio = _xpNextLevel > 0 ? (_xp / _xpNextLevel).clamp(0.0, 1.0) : 0.0;
+    final xpGained = _completed && l.xpReward > 0 && _xpAnimated ? l.xpReward : 0;
+    final modPct = _moduleTotalLessons > 0 ? _moduleCompletedLessons / _moduleTotalLessons : 0.0;
+    final coursePct = _courseTotalLessons > 0 ? _courseCompletedLessons / _courseTotalLessons : 0.0;
+
     return Column(
       children: [
+        // ── Lesson completion badge ──────────────────────────────
         Stack(
           alignment: Alignment.center,
           children: [
@@ -804,61 +856,113 @@ class _LessonScreenState extends State<LessonScreen>
               width: 88,
               height: 88,
               child: CircularProgressIndicator(
-                value: 0.75,
+                value: xpRatio,
                 strokeWidth: 4,
                 backgroundColor: AppColors.surfaceVariant,
                 valueColor:
                     const AlwaysStoppedAnimation<Color>(AppColors.primary),
               ),
             ),
-            Icon(
-              _completed ? Icons.check_circle : Icons.check_circle_outline,
-              size: 36,
-              color: _completed
-                  ? AppColors.primary
-                  : AppColors.onSurfaceVariant,
+            AnimatedSwitcher(
+              duration: 400.ms,
+              child: Icon(
+                _completed ? Icons.check_circle : Icons.check_circle_outline,
+                key: ValueKey(_completed),
+                size: 36,
+                color: _completed
+                    ? AppColors.primary
+                    : AppColors.onSurfaceVariant,
+              ),
             ),
             Positioned(
               top: 0,
               right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
+              child: AnimatedContainer(
+                duration: 400.ms,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.tertiary,
+                  color: _completed ? AppColors.secondary : AppColors.tertiary,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text('+${l.xpReward} XP',
-                    style: AppTextStyles.labelSm(
-                            color: AppColors.onTertiary)
-                        .copyWith(
-                            fontSize: 11, fontWeight: FontWeight.w700)),
+                child: AnimatedSwitcher(
+                  duration: 300.ms,
+                  child: Text(
+                    xpGained > 0 ? '+$xpGained XP' : '+${l.xpReward} XP',
+                    key: ValueKey(xpGained),
+                    style: AppTextStyles.labelSm(color: AppColors.onTertiary)
+                        .copyWith(fontSize: 11, fontWeight: FontWeight.w700),
+                  ),
+                ),
               ),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        Text('Lesson Complete?',
+        Text(_completed ? 'Lesson Complete!' : 'Lesson Complete?',
             style: AppTextStyles.headlineMd(color: AppColors.onSurface)),
         const SizedBox(height: 8),
-        const Text(
-          'Mark this lesson as complete to earn your XP and unlock the next one.',
+        Text(
+          _completed
+              ? 'Great work! You earned +${l.xpReward} XP.'
+              : 'Mark this lesson as complete to earn your XP and unlock the next one.',
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            height: 54,
-            child: ElevatedButton.icon(
-              onPressed: () async {
-                try {
-                  await ApiService.completeLesson(widget.lessonId!);
-                } catch (_) {}
-                setState(() => _completed = true);
-                Future.delayed(600.ms, () {
-                  if (mounted) context.go(AppRoutes.quizPath(widget.lessonId!));
-                });
-              },
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: ElevatedButton.icon(
+            onPressed: _completed
+                ? null
+                : () async {
+                    try {
+                      final oldLevel = _level;
+                      await ApiService.completeLesson(widget.lessonId!);
+                      final profile = await ApiService.getUserProfile();
+                      if (!mounted) return;
+                      final newLevel = profile['level'] as int? ?? _level;
+                      setState(() {
+                        _completed = true;
+                        _xpAnimated = true;
+                        _xp = profile['xp'] as int? ?? _xp + l.xpReward;
+                        _xpNextLevel = profile['xp_next_level'] as int? ?? _xpNextLevel;
+                        _level = newLevel;
+                      });
+                      NotificationService.instance.showNotification(
+                        title: 'Lesson Complete',
+                        body: 'You earned +${l.xpReward} XP for "${l.title}"',
+                        type: 'lesson',
+                        xpAmount: l.xpReward,
+                      );
+                      if (newLevel > oldLevel) {
+                        NotificationService.instance.showNotification(
+                          title: '🎉 Level Up!',
+                          body: 'You reached level $newLevel! Keep up the great work!',
+                          type: 'xp',
+                          xpAmount: l.xpReward,
+                        );
+                      }
+                      if (l.quizId != null) {
+                        NotificationService.instance.scheduleDelayedNotification(
+                          id: 1000 + l.id,
+                          title: '📝 Quiz Ready!',
+                          body: 'Test your knowledge on "${l.title}" — take the quiz now!',
+                          delay: const Duration(hours: 1),
+                        );
+                      }
+                    } catch (_) {
+                      if (!mounted) return;
+                      setState(() => _completed = true);
+                    }
+                    Future.delayed(1800.ms, () {
+                      if (mounted && !_completed) return;
+                      if (mounted && l.lessonType != 'quiz') {
+                        context.pop();
+                      } else if (mounted) {
+                        context.go(AppRoutes.quizPath(widget.lessonId!));
+                      }
+                    });
+                  },
             icon: Text(
               _completed ? 'Completed!' : 'Mark as Complete',
               style: AppTextStyles.bodyMd(
@@ -886,7 +990,33 @@ class _LessonScreenState extends State<LessonScreen>
           ),
         ),
         const SizedBox(height: 24),
-        XpProgressBar(current: 8450, total: 10000, label: 'Level 42 Progress'),
+
+        // ── Module progress ────────────────────────────────────
+        _ProgressCard(
+          icon: Icons.folder_outlined,
+          iconColor: AppColors.primary,
+          title: 'Module Progress',
+          subtitle: '$_moduleCompletedLessons / $_moduleTotalLessons lessons',
+          value: modPct,
+        ),
+        const SizedBox(height: 16),
+
+        // ── Course progress ────────────────────────────────────
+        _ProgressCard(
+          icon: Icons.library_books_outlined,
+          iconColor: AppColors.secondary,
+          title: 'Course Progress',
+          subtitle: '$_courseCompletedModules / $_courseTotalModules modules • $_courseCompletedLessons / $_courseTotalLessons lessons',
+          value: coursePct,
+        ),
+        const SizedBox(height: 16),
+
+        // ── Level XP ───────────────────────────────────────────
+        XpProgressBar(
+          current: _xp,
+          total: _xpNextLevel,
+          label: 'Level $_level Progress',
+        ),
       ],
     );
   }
@@ -941,16 +1071,18 @@ class _ResourceCard extends StatelessWidget {
     // Resolve local media paths to full URLs
     final resolvedUrl = AppConfig.mediaUrl(resource.url);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: AppColors.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      child: Row(
+    return GestureDetector(
+      onTap: () => launchUrl(Uri.parse(resolvedUrl), mode: LaunchMode.externalApplication),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.3)),
+        ),
+        child: Row(
         children: [
           Container(
             width: 36,
@@ -983,6 +1115,7 @@ class _ResourceCard extends StatelessWidget {
               size: 18),
         ],
       ),
+      ),
     );
   }
 
@@ -993,6 +1126,77 @@ class _ResourceCard extends StatelessWidget {
       case 'video': return (Icons.ondemand_video_outlined, AppColors.secondary);
       default: return (Icons.link_rounded, AppColors.primary);
     }
+  }
+}
+
+// ── Progress Card ──────────────────────────────────────────────────
+class _ProgressCard extends StatelessWidget {
+  const _ProgressCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: AppColors.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: AppTextStyles.labelSm(color: AppColors.onSurface)
+                        .copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(subtitle,
+                    style: AppTextStyles.labelSm(
+                        color: AppColors.onSurfaceVariant)
+                        .copyWith(fontSize: 11)),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: value,
+                    minHeight: 5,
+                    backgroundColor:
+                        AppColors.surfaceVariant.withValues(alpha: 0.5),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(iconColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 300.ms).slideX(begin: 0.1, end: 0, curve: Curves.easeOut);
   }
 }
 

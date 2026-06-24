@@ -6,11 +6,22 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_animations.dart';
 import '../../core/router/app_router.dart';
+import '../shell/app_shell.dart';
 
 class QuizResultScreen extends StatefulWidget {
-  const QuizResultScreen({super.key, this.score = 7, this.total = 10});
+  const QuizResultScreen({
+    super.key,
+    this.score = 7,
+    this.total = 10,
+    this.xpEarned = 0,
+    this.timeTaken = 0,
+    this.quizTitle = 'Quiz',
+  });
   final int score;
   final int total;
+  final int xpEarned;
+  final int timeTaken;
+  final String quizTitle;
 
   @override
   State<QuizResultScreen> createState() => _QuizResultScreenState();
@@ -23,7 +34,6 @@ class _QuizResultScreenState extends State<QuizResultScreen>
   late final AnimationController _confettiCtrl;
   final List<_Particle> _particles = [];
 
-  int get _xpEarned => (widget.score / widget.total * 250).round();
   double get _pct => widget.score / widget.total;
 
   String get _grade {
@@ -48,6 +58,12 @@ class _QuizResultScreenState extends State<QuizResultScreen>
     if (_pct >= 0.7) return 'Well done!';
     if (_pct >= 0.6) return 'Good effort!';
     return 'Keep practicing!';
+  }
+
+  String get _timeLabel {
+    final m = widget.timeTaken ~/ 60;
+    final s = widget.timeTaken % 60;
+    return '${m}:${s.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -177,7 +193,7 @@ class _QuizResultScreenState extends State<QuizResultScreen>
             .slideY(begin: 0.2, end: 0, delay: 200.ms, duration: 500.ms),
         const SizedBox(height: 6),
         Text(
-          'Rust Ownership Quiz • Question 4 of 10',
+          '${widget.quizTitle}',
           style: AppTextStyles.labelSm(color: AppColors.onSurfaceVariant)
               .copyWith(letterSpacing: 1),
           textAlign: TextAlign.center,
@@ -277,7 +293,7 @@ class _QuizResultScreenState extends State<QuizResultScreen>
         Expanded(
           child: _StatBox(
             icon: Icons.timer_rounded,
-            value: '2:34',
+            value: _timeLabel,
             label: 'Time',
             color: AppColors.primary,
           ).staggered(2),
@@ -339,7 +355,7 @@ class _QuizResultScreenState extends State<QuizResultScreen>
                     style: AppTextStyles.labelSm(color: AppColors.secondary)
                         .copyWith(letterSpacing: 2, fontSize: 11)),
                 const SizedBox(height: 4),
-                Text('+$_xpEarned XP',
+                Text('+${widget.xpEarned} XP',
                     style: AppTextStyles.displayLgMobile(
                             color: AppColors.secondary)
                         .copyWith(fontSize: 28, fontWeight: FontWeight.w900)),
@@ -348,15 +364,21 @@ class _QuizResultScreenState extends State<QuizResultScreen>
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('Level 42',
-                  style: AppTextStyles.labelSm(color: AppColors.onSurfaceVariant)
-                      .copyWith(fontSize: 11)),
-              const SizedBox(height: 4),
-              Text('8,700 / 10,000',
-                  style: AppTextStyles.labelSm(color: AppColors.primary)
-                      .copyWith(fontWeight: FontWeight.w700)),
-            ],
+            children: () {
+              final userData = UserDataScope.of(context);
+              final level = (userData?['level'] as int?) ?? 1;
+              final xp = (userData?['xp'] as int?) ?? 0;
+              final xpNext = (userData?['xp_next_level'] as int?) ?? level * 1000;
+              return [
+                Text('Level $level',
+                    style: AppTextStyles.labelSm(color: AppColors.onSurfaceVariant)
+                        .copyWith(fontSize: 11)),
+                const SizedBox(height: 4),
+                Text('$xp / $xpNext',
+                    style: AppTextStyles.labelSm(color: AppColors.primary)
+                        .copyWith(fontWeight: FontWeight.w700)),
+              ];
+            }(),
           ),
         ],
       ),

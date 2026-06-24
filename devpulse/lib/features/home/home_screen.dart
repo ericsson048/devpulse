@@ -6,6 +6,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_animations.dart';
 import '../../core/router/app_router.dart';
 import '../../core/services/api_service.dart';
+import '../../core/services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -170,8 +171,8 @@ class _HomeScreenState extends State<HomeScreen> {
           // Notification bell
           _IconBtn(
             icon: Icons.notifications_outlined,
-            badge: true,
-            onTap: () {},
+            badge: NotificationService.instance.unreadCount > 0,
+            onTap: () => context.go(AppRoutes.notifications),
           ),
           const SizedBox(width: 8),
           // Avatar
@@ -353,7 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
         itemCount: courses.length,
         itemBuilder: (_, i) {
           final c = courses[i];
-          final courseId = c['course_id'] as int? ?? 1;
+          final courseId = c['id'] as int? ?? 1;
           return Padding(
             padding: const EdgeInsets.only(right: 14),
             child: _ContinueCard(

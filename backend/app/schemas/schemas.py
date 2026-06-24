@@ -367,3 +367,23 @@ class BackofficeDashboard(BaseModel):
     total_quizzes: int
     active_users_today: int
     total_quiz_attempts: int
+
+
+class WeeklyDataPoint(BaseModel):
+    week: str
+    count: int
+
+
+class CourseProgressStat(BaseModel):
+    course: str
+    completed: int
+    in_progress: int
+    not_started: int
+
+
+class AdminDashboardCharts(BaseModel):
+    weekly_registrations: list[WeeklyDataPoint]
+    weekly_quiz_attempts: list[WeeklyDataPoint]
+    quiz_grades: dict[str, int]
+    level_distribution: list[dict]
+    course_progress: list[CourseProgressStat]
