@@ -42,7 +42,7 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {error && (
-            <div className="flex items-center gap-2 p-3 rounded-md bg-red-900/30 border border-red-800 text-red-300 text-sm">
+            <div className="flex items-center gap-2 p-3 rounded-md" style={{ background: 'var(--red-soft)', border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)', color: 'var(--red)' }}>
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{error}</span>
             </div>

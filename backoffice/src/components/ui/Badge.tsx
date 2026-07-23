@@ -8,11 +8,11 @@ interface BadgeProps {
 }
 
 const severityClasses = {
-  info: 'bg-blue-900/40 text-blue-300',
-  success: 'bg-green-900/40 text-green-300',
-  warning: 'bg-yellow-900/40 text-yellow-300',
-  danger: 'bg-red-900/40 text-red-300',
-  secondary: 'bg-gray-700 text-gray-400',
+  info: 'bg-[var(--accent-soft)] text-[var(--accent)]',
+  success: 'bg-[var(--green-soft)] text-[var(--green)]',
+  warning: 'bg-[var(--amber-soft)] text-[var(--amber)]',
+  danger: 'bg-[var(--red-soft)] text-[var(--red)]',
+  secondary: 'bg-[var(--bg-surface)] text-[var(--text-dim)]',
 };
 
 export default function Badge({ value, severity = 'info', icon, className = '' }: BadgeProps) {

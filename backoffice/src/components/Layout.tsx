@@ -1,6 +1,8 @@
-import { NavLink, Outlet, Navigate, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Zap, Home, BookOpen, Users, HelpCircle, Star, Image, LogOut } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { Zap, Home, BookOpen, Users, HelpCircle, Star, Image, LogOut, Menu, Sun, Moon } from 'lucide-react';
+import { useState } from 'react';
 
 const iconMap: Record<string, React.ReactNode> = {
   '/': <Home className="w-4.5 h-4.5" />,
@@ -11,11 +13,26 @@ const iconMap: Record<string, React.ReactNode> = {
   '/media': <Image className="w-4.5 h-4.5" />,
 };
 
+const pageTitles: Record<string, string> = {
+  '/': 'Dashboard',
+  '/courses': 'Courses',
+  '/users': 'Users',
+  '/quizzes': 'Quizzes',
+  '/achievements': 'Achievements',
+  '/media': 'Media',
+};
+
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (!user) return <Navigate to="/login" replace />;
+
+  const basePath = '/' + location.pathname.split('/')[1];
+  const pageTitle = pageTitles[basePath] || 'DevPulse';
 
   const menuItems = [
     { to: '/', label: 'Dashboard', end: true },
@@ -28,7 +45,7 @@ export default function Layout() {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-brand" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
           <Zap className="w-5 h-5" />
           <span>DevPulse</span>
@@ -41,6 +58,7 @@ export default function Layout() {
               to={item.to}
               end={item.end}
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => setSidebarOpen(false)}
             >
               {iconMap[item.to]}
               <span>{item.label}</span>
@@ -62,9 +80,31 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className="main-content">
-        <Outlet />
-      </main>
+      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
+      <div className="main-wrapper">
+        <header className="navbar">
+          <button className="navbar-menu-btn" onClick={() => setSidebarOpen(v => !v)}>
+            <Menu className="w-5 h-5" />
+          </button>
+          <h2 className="navbar-title">{pageTitle}</h2>
+          <div className="navbar-spacer" />
+          <button className="navbar-theme-btn" onClick={toggleTheme} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+          <div className="navbar-user">
+            <div className="user-avatar">{(user.display_name || '?')[0]}</div>
+            <div className="navbar-user-info">
+              <div className="user-name">{user.display_name}</div>
+              <div className="user-role">{user.role}</div>
+            </div>
+          </div>
+        </header>
+
+        <main className="main-content">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
